@@ -12,8 +12,8 @@ The setting survives quitting and restarts, so switch sleep back on when you're 
 ## Build
 
 ```bash
-./build.sh                         # builds build/Wakey.app
-cp -R build/Wakey.app /Applications/
+./build.sh                         # builds build.noindex/Wakey.app
+cp -R build.noindex/Wakey.app /Applications/
 ./make-icon.sh                     # only if the face changes: regenerates AppIcon.icns
 ```
 

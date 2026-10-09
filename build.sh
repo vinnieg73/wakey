@@ -1,9 +1,9 @@
 #!/bin/bash
-# Builds Wakey.app into ./build. Copy it to /Applications to keep it.
+# Builds Wakey.app into ./build.noindex (.noindex keeps Spotlight/Launchpad from listing a second copy). Copy it to /Applications to keep it.
 set -euo pipefail
 cd "$(dirname "$0")"
-APP="build/Wakey.app"
-rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+APP="build.noindex/Wakey.app"
+rm -rf build.noindex && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp AppIcon.icns "$APP/Contents/Resources/"
 swiftc -O -target "$(uname -m)-apple-macos13" main.swift Icons.swift -o "$APP/Contents/MacOS/Wakey"
 cat > "$APP/Contents/Info.plist" <<PLIST
