@@ -61,15 +61,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let stateRow = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     let toggleRow = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
     let loginRow = NSMenuItem(title: "Open at Login", action: #selector(toggleLogin), keyEquivalent: "")
+    let lightsRow = NSMenuItem(title: "Lights Off When Lid Closes", action: #selector(toggleLights), keyEquivalent: "")
     var awake = false
+
+    let keyboard = KeyboardLight()
+    var lidWasClosed = false
+    var savedKeyboardLevel: Float?   // set while we have the lights off
+    var lightsOffOnLid: Bool {
+        get { UserDefaults.standard.bool(forKey: "lightsOffOnLid") }
+        set { UserDefaults.standard.set(newValue, forKey: "lightsOffOnLid") }
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         stateRow.isEnabled = false
         toggleRow.target = self
         loginRow.target = self
+        lightsRow.target = self
         menu.addItem(stateRow)
         menu.addItem(toggleRow)
         menu.addItem(.separator())
+        menu.addItem(lightsRow)
         menu.addItem(loginRow)
         menu.addItem(NSMenuItem(title: "Quit Wakey", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
         menu.delegate = self
@@ -84,9 +95,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UserDefaults.standard.set(true, forKey: "didSetupLogin")
         }
 
+        UserDefaults.standard.register(defaults: ["lightsOffOnLid": true])
+
         refresh()
         // Pick up changes made elsewhere (for example in Terminal).
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
+
+        // Watch the lid. Starting with the lid already shut doesn't count as closing it.
+        lidWasClosed = lidClosed()
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
+    }
+
+    func applicationWillTerminate(_ n: Notification) { restoreLights() }
+
+    func checkLid() {
+        let closed = lidClosed()
+        if closed, savedKeyboardLevel != nil, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
+        guard closed != lidWasClosed else { return }
+        lidWasClosed = closed
+        if closed {
+            // Only while staying awake: in normal mode the Mac just goes to sleep.
+            guard lightsOffOnLid, savedKeyboardLevel == nil, sleepDisabled() else { return }
+            savedKeyboardLevel = keyboard.level ?? 0
+            keyboard.set(0)
+            // With an external display attached, the lid closing is just clamshell mode: leave screens on.
+            let external = NSScreen.screens.contains {
+                guard let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+                return CGDisplayIsBuiltin(n.uint32Value) == 0
+            }
+            if !external { displaysOffNow() }
+        } else {
+            restoreLights()
+        }
+    }
+
+    /// Puts the keyboard light back to where it was before the lid closed.
+    func restoreLights() {
+        guard let level = savedKeyboardLevel else { return }
+        savedKeyboardLevel = nil
+        if level > 0 { keyboard.set(level) }
     }
 
     func refresh() {
@@ -100,6 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         stateRow.title = awake ? "Awake: lid can close" : "Normal sleep"
         toggleRow.title = awake ? "Allow Sleep Again" : "Keep Awake with Lid Closed"
         loginRow.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        lightsRow.state = lightsOffOnLid ? .on : .off
     }
 
     @objc func clicked() {
@@ -119,6 +167,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             try? SMAppService.mainApp.register()
         }
+        refresh()
+    }
+
+    @objc func toggleLights() {
+        lightsOffOnLid.toggle()
         refresh()
     }
 
