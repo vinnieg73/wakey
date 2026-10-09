@@ -66,7 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     let keyboard = KeyboardLight()
     var lidWasClosed = false
-    var savedKeyboardLevel: Float?   // set while we have the lights off
+    var lightsAreOff = false          // set while we have the keyboard light off
+    var recent: [(keyboard: Float?, screen: Float?)] = []   // last few readings while the lid is open
+    var settling = 0                  // readings to skip right after the lid opens
     var lightsOffOnLid: Bool {
         get { UserDefaults.standard.bool(forKey: "lightsOffOnLid") }
         set { UserDefaults.standard.set(newValue, forKey: "lightsOffOnLid") }
@@ -106,17 +108,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
     }
 
-    func applicationWillTerminate(_ n: Notification) { restoreLights() }
+    func applicationWillTerminate(_ n: Notification) {
+        if lightsAreOff { restoreLights() }
+    }
 
     func checkLid() {
         let closed = lidClosed()
-        if closed, savedKeyboardLevel != nil, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
+        if closed, lightsAreOff, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
+        if !closed { remember() }
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
+        recent.removeAll()
+        settling = 3
         if closed {
             // Only while staying awake: in normal mode the Mac just goes to sleep.
-            guard lightsOffOnLid, savedKeyboardLevel == nil, sleepDisabled() else { return }
-            savedKeyboardLevel = keyboard.level ?? 0
+            guard lightsOffOnLid, !lightsAreOff, sleepDisabled() else { return }
+            lightsAreOff = true
             keyboard.set(0)
             // With an external display attached, the lid closing is just clamshell mode: leave screens on.
             let external = NSScreen.screens.contains {
@@ -129,11 +136,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Puts the keyboard light back to where it was before the lid closed.
+    /// Saves the keyboard and screen levels from 3 seconds ago, so dimming while the lid
+    /// is closing (or just after it opens) never gets saved as the level to come back to.
+    func remember() {
+        if settling > 0 { settling -= 1; return }
+        recent.append((keyboard.level, ScreenLight.level))
+        guard recent.count > 3 else { return }
+        let good = recent.removeFirst()
+        if let k = good.keyboard { UserDefaults.standard.set(k, forKey: "lastKeyboardLevel") }
+        if let s = good.screen, s > 0.02 { UserDefaults.standard.set(s, forKey: "lastScreenLevel") }
+    }
+
+    /// Puts the keyboard and screen back to their last lid-open levels. Applied a few times,
+    /// since macOS sets its own levels for a moment after the lid opens.
     func restoreLights() {
-        guard let level = savedKeyboardLevel else { return }
-        savedKeyboardLevel = nil
-        if level > 0 { keyboard.set(level) }
+        lightsAreOff = false
+        let d = UserDefaults.standard
+        let k = d.object(forKey: "lastKeyboardLevel") == nil ? nil : d.float(forKey: "lastKeyboardLevel")
+        let s = d.object(forKey: "lastScreenLevel") == nil ? nil : d.float(forKey: "lastScreenLevel")
+        let apply = { [weak self] in
+            if let k { self?.keyboard.set(k) }
+            if let s { ScreenLight.set(s) }
+        }
+        apply()
+        for delay in [0.3, 1, 2.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                if self?.lidWasClosed == false { apply() }
+            }
+        }
     }
 
     func refresh() {

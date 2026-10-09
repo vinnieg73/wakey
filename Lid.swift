@@ -53,3 +53,32 @@ final class KeyboardLight {
         _ = unsafeBitCast(method_getImplementation(m), to: Set.self)(c, sel, v, id)
     }
 }
+
+/// Built-in screen brightness through Apple's private DisplayServices framework.
+/// Every call quietly does nothing if that API isn't there or the built-in screen is off.
+enum ScreenLight {
+    private typealias Get = @convention(c) (UInt32, UnsafeMutablePointer<Float>) -> Int32
+    private typealias Set = @convention(c) (UInt32, Float) -> Int32
+    private static let lib = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW)
+    private static let getFn = dlsym(lib, "DisplayServicesGetBrightness").map { unsafeBitCast($0, to: Get.self) }
+    private static let setFn = dlsym(lib, "DisplayServicesSetBrightness").map { unsafeBitCast($0, to: Set.self) }
+
+    private static var builtIn: CGDirectDisplayID? {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+        var n: UInt32 = 0
+        guard CGGetOnlineDisplayList(16, &ids, &n) == .success else { return nil }
+        return ids.prefix(Int(n)).first { CGDisplayIsBuiltin($0) != 0 }
+    }
+
+    /// Current level, 0...1.
+    static var level: Float? {
+        guard let get = getFn, let id = builtIn else { return nil }
+        var v: Float = 0
+        return get(id, &v) == 0 ? v : nil
+    }
+
+    static func set(_ v: Float) {
+        guard let set = setFn, let id = builtIn else { return }
+        _ = set(id, v)
+    }
+}
