@@ -37,22 +37,30 @@ func sudoPmset(_ on: Bool) -> Bool {
 
 /// One-time setup (asks for the password once): lets this user run ONLY
 /// `pmset -a disablesleep 0` and `pmset -a disablesleep 1` without a password.
-func installRule() -> Bool {
+func installRule() -> SwitchResult {
     let rule = "\(NSUserName()) ALL=(root) NOPASSWD: \(pmset) -a disablesleep 0, \(pmset) -a disablesleep 1\n"
-    let tmp = NSTemporaryDirectory() + "sleeptoggle.sudoers"
-    guard (try? rule.write(toFile: tmp, atomically: true, encoding: .utf8)) != nil else { return false }
+    let tmp = NSTemporaryDirectory() + "sleeptoggle.sudoers-" + UUID().uuidString
+    guard (try? rule.write(toFile: tmp, atomically: true, encoding: .utf8)) != nil else { return .failed }
     defer { try? FileManager.default.removeItem(atPath: tmp) }
     let sh = "/usr/sbin/visudo -cf '\(tmp)' && /usr/bin/install -m 0440 -o root -g wheel '\(tmp)' '\(sudoersFile)'"
     let script = "do shell script \"\(sh)\" with prompt \"Wakey needs your password one last time so it can switch sleep without asking again.\" with administrator privileges"
     var err: NSDictionary?
     NSAppleScript(source: script)?.executeAndReturnError(&err)
-    return err == nil
+    if err == nil { return .done }
+    return (err?[NSAppleScript.errorNumber] as? Int) == -128 ? .cancelled : .failed   // -128: user cancelled
 }
 
-func setSleepDisabled(_ on: Bool) -> Bool {
-    if sudoPmset(on) { return true }
-    guard installRule() else { return false }
-    return sudoPmset(on)
+enum SwitchResult { case done, cancelled, failed }
+
+var askedForPassword = false   // set when the password box was shown
+
+func setSleepDisabled(_ on: Bool) -> SwitchResult {
+    askedForPassword = false
+    if sudoPmset(on) { return .done }
+    askedForPassword = true
+    let r = installRule()
+    guard r == .done else { return r }
+    return sudoPmset(on) ? .done : .failed
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -63,6 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let loginRow = NSMenuItem(title: "Open at Login", action: #selector(toggleLogin), keyEquivalent: "")
     let lightsRow = NSMenuItem(title: "Lights Off When Lid Closes", action: #selector(toggleLights), keyEquivalent: "")
     var awake = false
+    var busy = false                  // a switch is in progress
+    var ignoreClicksUntil: TimeInterval = 0   // clicks queued before this time (system uptime) are dropped
 
     let keyboard = KeyboardLight()
     var lidWasClosed = false
@@ -203,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.menu = menu
             item.button?.performClick(nil)
         } else {
+            if let t = e?.timestamp, t < ignoreClicksUntil { return }   // queued during the password box
             toggle()
         }
     }
@@ -224,7 +235,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuDidClose(_ m: NSMenu) { item.menu = nil }
 
     @objc func toggle() {
-        _ = setSleepDisabled(!awake)   // cancelling the password prompt just leaves it unchanged
+        guard !busy else { return }
+        busy = true
+        let result = setSleepDisabled(!sleepDisabled())   // read the real state, not the cached one
+        if askedForPassword { ignoreClicksUntil = ProcessInfo.processInfo.systemUptime }
+        busy = false
+        if result == .failed {   // cancelling the password prompt stays silent and leaves it unchanged
+            NSApp.activate(ignoringOtherApps: true)
+            let a = NSAlert()
+            a.messageText = "Wakey couldn't switch sleep"
+            a.informativeText = "Switching needs an administrator account, and its password once, the first time."
+            a.runModal()
+            ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
+        }
         refresh()
     }
 }
