@@ -42,30 +42,49 @@ func sudoPmset(_ on: Bool) -> Bool {
     return p.terminationStatus == 0
 }
 
+/// Wraps text in single quotes for /bin/sh.
+func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
 /// One-time setup (asks for the password once): lets this user run ONLY
 /// `pmset -a disablesleep 0` and `pmset -a disablesleep 1` without a password.
 func installRule() -> SwitchResult {
-    let rule = "\(NSUserName()) ALL=(root) NOPASSWD: \(pmset) -a disablesleep 0, \(pmset) -a disablesleep 1\n"
-    let tmp = NSTemporaryDirectory() + "sleeptoggle.sudoers-" + UUID().uuidString
-    guard (try? rule.write(toFile: tmp, atomically: true, encoding: .utf8)) != nil else { return .failed }
-    defer { try? FileManager.default.removeItem(atPath: tmp) }
-    // Copy to a root-owned staging file (the '.' makes sudo ignore it), check that copy, then move it into place.
-    let staged = "/etc/sudoers.d/.\((sudoersFile as NSString).lastPathComponent).new"
-    let sh = "/usr/bin/install -m 0440 -o root -g wheel '\(tmp)' '\(staged)' && { /usr/sbin/visudo -cf '\(staged)' && /bin/mv -f '\(staged)' '\(sudoersFile)'; } || { /bin/rm -f '\(staged)'; exit 1; }"
-    let script = "do shell script \"\(sh)\" with prompt \"Wakey needs your password one last time so it can switch sleep without asking again.\" with administrator privileges"
+    let rule = "\(NSUserName()) ALL=(root) NOPASSWD: \(pmset) -a disablesleep 0, \(pmset) -a disablesleep 1"
+    // The root shell writes the rule itself into a root-owned staging file (the '.' makes sudo ignore it),
+    // checks that file, then moves it into place. No user-writable file is involved at any point.
+    let staged = shQuote("/etc/sudoers.d/.\((sudoersFile as NSString).lastPathComponent).new")
+    let sh = "/bin/rm -f \(staged) && (umask 0337 && printf '%s\\n' \(shQuote(rule)) > \(staged))"
+        + " && /usr/sbin/chown root:wheel \(staged) && /bin/chmod 0440 \(staged)"
+        + " && /usr/sbin/visudo -cf \(staged) && /bin/mv -f \(staged) \(shQuote(sudoersFile))"
+        + " || { /bin/rm -f \(staged); exit 1; }"
+    // AppleScript string: escape backslashes and double quotes.
+    let asString = sh.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    let script = "do shell script \"\(asString)\" with prompt \"Wakey needs your password one last time so it can switch sleep without asking again.\" with administrator privileges"
     var err: NSDictionary?
     NSAppleScript(source: script)?.executeAndReturnError(&err)
     if err == nil { return .done }
     return (err?[NSAppleScript.errorNumber] as? Int) == -128 ? .cancelled : .failed   // -128: user cancelled
 }
 
-enum SwitchResult { case done, cancelled, failed }
+/// True when sudo already lets this user run the pmset command without a password
+/// (the rule is installed and works), so a failure came from pmset itself.
+func ruleAllows(_ on: Bool) -> Bool {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+    p.arguments = ["-n", "-l", pmset, "-a", "disablesleep", on ? "1" : "0"]
+    p.standardOutput = Pipe(); p.standardError = Pipe()
+    guard (try? p.run()) != nil else { return false }
+    p.waitUntilExit()
+    return p.terminationStatus == 0
+}
+
+enum SwitchResult { case done, cancelled, failed, pmsetFailed }
 
 var askedForPassword = false   // set when the password box was shown
 
 func setSleepDisabled(_ on: Bool) -> SwitchResult {
     askedForPassword = false
     if sudoPmset(on) { return .done }
+    if ruleAllows(on) { return .pmsetFailed }   // rule works, pmset failed: asking for the password won't help
     askedForPassword = true
     let r = installRule()
     guard r == .done else { return r }
@@ -112,6 +131,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.target = self
         item.button?.action = #selector(clicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // VoiceOver and keyboard users: pressing the button switches, this action opens the menu.
+        item.button?.setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Show menu") { [weak self] in
+                DispatchQueue.main.async { self?.showMenu() }   // after the accessibility call returns
+                return true
+            }
+        ])
 
         // Start at login by default; after the first launch the menu checkmark decides.
         // Only from /Applications (not the build folder copy), and only marked done if it worked.
@@ -160,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func checkLid() {
         let closed = lidClosed()
-        if closed, lightsAreOff, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
+        if closed, lightsAreOff, lightsOffOnLid, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
         if !closed { remember() }
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
@@ -168,19 +194,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recent.removeAll()
         settling = 3
         if closed {
-            // Only while staying awake: in normal mode the Mac just goes to sleep.
-            guard lightsOffOnLid, !lightsAreOff, sleepDisabled() else { return }
-            lightsAreOff = true
-            keyboard.set(0)
-            // With an external display attached, the lid closing is just clamshell mode: leave screens on.
-            let external = NSScreen.screens.contains {
-                guard let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
-                return CGDisplayIsBuiltin(n.uint32Value) == 0
-            }
-            if !external { displaysOffNow() }
+            lightsOff()
         } else if lightsAreOff {
             restoreLights()
         }
+    }
+
+    /// Lid is shut: keyboard light off, and the screen off unless an external display is attached.
+    func lightsOff() {
+        // Only while staying awake: in normal mode the Mac just goes to sleep.
+        guard lightsOffOnLid, !lightsAreOff, sleepDisabled() else { return }
+        lightsAreOff = true
+        keyboard.set(0)
+        // With an external display attached, the lid closing is just clamshell mode: leave screens on.
+        let external = NSScreen.screens.contains {
+            guard let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return CGDisplayIsBuiltin(n.uint32Value) == 0
+        }
+        if !external { displaysOffNow() }
     }
 
     /// Saves the keyboard and screen levels from 3 seconds ago, so dimming while the lid
@@ -236,13 +267,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func clicked() {
         let e = NSApp.currentEvent
         if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
-            refresh()
-            item.menu = menu
-            item.button?.performClick(nil)
+            showMenu()
         } else {
             if let t = e?.timestamp, t < ignoreClicksUntil { return }   // queued during the password box
             toggle()
         }
+    }
+
+    func showMenu() {
+        refresh()
+        item.menu = menu
+        item.button?.performClick(nil)
     }
 
     @objc func toggleLogin() {
@@ -250,8 +285,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             if service.status == .enabled {
                 try service.unregister()
-            } else if service.status != .requiresApproval {
+                UserDefaults.standard.set(true, forKey: "didSetupLogin")   // the user chose; launch won't override it
+            } else if service.status == .requiresApproval {
+                // Handled below: opens System Settings.
+            } else if !Bundle.main.bundlePath.hasPrefix("/Applications/") {
+                // A build-folder copy would register a path the next build deletes.
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "Open at Login works only from Applications"
+                alert.informativeText = "Copy Wakey to /Applications and open it from there, then turn this on."
+                alert.runModal()
+            } else {
                 try service.register()
+                UserDefaults.standard.set(true, forKey: "didSetupLogin")
             }
         } catch {
             NSApp.activate(ignoringOtherApps: true)
@@ -267,6 +313,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleLights() {
         lightsOffOnLid.toggle()
+        // Ticked with the lid already shut: act now. Unticked: checkLid stops holding the light at 0,
+        // and it comes back as usual when the lid opens.
+        if lightsOffOnLid, lidWasClosed { lightsOff() }
         refresh()
     }
 
@@ -275,14 +324,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggle() {
         guard !busy else { return }
         busy = true
+        defer { busy = false }   // stays set while the alert is open, so clicks during it can't start another switch
         let result = setSleepDisabled(!sleepDisabled())   // read the real state, not the cached one
         if askedForPassword { ignoreClicksUntil = ProcessInfo.processInfo.systemUptime }
-        busy = false
-        if result == .failed {   // cancelling the password prompt stays silent and leaves it unchanged
+        if result == .failed || result == .pmsetFailed {   // cancelling the password prompt stays silent and leaves it unchanged
             NSApp.activate(ignoringOtherApps: true)
             let a = NSAlert()
             a.messageText = "Wakey couldn't switch sleep"
-            a.informativeText = "Switching needs an administrator account, and its password once, the first time."
+            a.informativeText = result == .pmsetFailed
+                ? "The permission is set up, but pmset itself failed. Try again, or run \"pmset -g\" in Terminal to check."
+                : "Switching needs an administrator account, and its password once, the first time."
             a.runModal()
             ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
         }
