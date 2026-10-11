@@ -131,6 +131,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.target = self
         item.button?.action = #selector(clicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // VoiceOver and keyboard users: pressing the button switches, this action opens the menu.
+        item.button?.setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Show menu") { [weak self] in
+                DispatchQueue.main.async { self?.showMenu() }   // after the accessibility call returns
+                return true
+            }
+        ])
 
         // Start at login by default; after the first launch the menu checkmark decides.
         // Only from /Applications (not the build folder copy), and only marked done if it worked.
@@ -255,13 +262,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func clicked() {
         let e = NSApp.currentEvent
         if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
-            refresh()
-            item.menu = menu
-            item.button?.performClick(nil)
+            showMenu()
         } else {
             if let t = e?.timestamp, t < ignoreClicksUntil { return }   // queued during the password box
             toggle()
         }
+    }
+
+    func showMenu() {
+        refresh()
+        item.menu = menu
+        item.button?.performClick(nil)
     }
 
     @objc func toggleLogin() {
@@ -269,8 +280,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             if service.status == .enabled {
                 try service.unregister()
-            } else if service.status != .requiresApproval {
+                UserDefaults.standard.set(true, forKey: "didSetupLogin")   // the user chose; launch won't override it
+            } else if service.status == .requiresApproval {
+                // Handled below: opens System Settings.
+            } else if !Bundle.main.bundlePath.hasPrefix("/Applications/") {
+                // A build-folder copy would register a path the next build deletes.
+                NSApp.activate(ignoringOtherApps: true)
+                let alert = NSAlert()
+                alert.messageText = "Open at Login works only from Applications"
+                alert.informativeText = "Copy Wakey to /Applications and open it from there, then turn this on."
+                alert.runModal()
+            } else {
                 try service.register()
+                UserDefaults.standard.set(true, forKey: "didSetupLogin")
             }
         } catch {
             NSApp.activate(ignoringOtherApps: true)
