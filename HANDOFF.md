@@ -7,7 +7,8 @@ A second audit (2026-10-11, report `tool-reviews/2026-10-11/wakey.md` in the pro
 merged into `main` (PR #2), built and installed in `/Applications/Wakey.app` on 2026-10-11 (compiled cleanly).
 Hand-tested 2026-10-11: the new rule install works (old `/etc/sudoers.d/sleeptoggle` removed, one password prompt
 installed `sleeptoggle-vinnie` root:wheel 0440, no staging file left), and a later click switched with no prompt.
-The rest is still to test; see "Next steps".
+Also tested: the VoiceOver "Show menu" action opens the menu without switching; Open at Login from a
+build-folder copy refuses to turn on (alert shown, nothing registered). Only the lid-shut Lights Off toggle is left.
 Repo: `vinnieg73/wakey` (private).
 
 ## Done
@@ -60,7 +61,9 @@ Repo: `vinnieg73/wakey` (private).
   rare, no privilege gain, and renaming would re-prompt everyone).
 
 ## Next steps
-- Still to hand-test: VoiceOver "Show menu" action, Lights Off toggle with the lid shut, Open at Login refusal outside `/Applications`.
+- Still to hand-test (needs the lid physically shut): with awake mode on, close the lid, then untick and re-tick
+  Lights Off When Lid Closes from the menu (via an external display or VoiceOver). Unticking should stop holding the
+  keyboard light at 0; ticking should turn the lights off right away.
 
 ## Decisions
 - Keep the display-off on lid close (2026-10-10). Vinnie wants the Mac to lock when the lid closes;
