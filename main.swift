@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func checkLid() {
         let closed = lidClosed()
-        if closed, lightsAreOff, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
+        if closed, lightsAreOff, lightsOffOnLid, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
         if !closed { remember() }
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
@@ -194,19 +194,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recent.removeAll()
         settling = 3
         if closed {
-            // Only while staying awake: in normal mode the Mac just goes to sleep.
-            guard lightsOffOnLid, !lightsAreOff, sleepDisabled() else { return }
-            lightsAreOff = true
-            keyboard.set(0)
-            // With an external display attached, the lid closing is just clamshell mode: leave screens on.
-            let external = NSScreen.screens.contains {
-                guard let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
-                return CGDisplayIsBuiltin(n.uint32Value) == 0
-            }
-            if !external { displaysOffNow() }
+            lightsOff()
         } else if lightsAreOff {
             restoreLights()
         }
+    }
+
+    /// Lid is shut: keyboard light off, and the screen off unless an external display is attached.
+    func lightsOff() {
+        // Only while staying awake: in normal mode the Mac just goes to sleep.
+        guard lightsOffOnLid, !lightsAreOff, sleepDisabled() else { return }
+        lightsAreOff = true
+        keyboard.set(0)
+        // With an external display attached, the lid closing is just clamshell mode: leave screens on.
+        let external = NSScreen.screens.contains {
+            guard let n = $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return false }
+            return CGDisplayIsBuiltin(n.uint32Value) == 0
+        }
+        if !external { displaysOffNow() }
     }
 
     /// Saves the keyboard and screen levels from 3 seconds ago, so dimming while the lid
@@ -308,6 +313,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func toggleLights() {
         lightsOffOnLid.toggle()
+        // Ticked with the lid already shut: act now. Unticked: checkLid stops holding the light at 0,
+        // and it comes back as usual when the lid opens.
+        if lightsOffOnLid, lidWasClosed { lightsOff() }
         refresh()
     }
 
