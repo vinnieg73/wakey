@@ -104,9 +104,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         // Start at login by default; after the first launch the menu checkmark decides.
-        if !UserDefaults.standard.bool(forKey: "didSetupLogin") {
-            try? SMAppService.mainApp.register()
-            UserDefaults.standard.set(true, forKey: "didSetupLogin")
+        // Only from /Applications (not the build folder copy), and only marked done if it worked.
+        if !UserDefaults.standard.bool(forKey: "didSetupLogin"), Bundle.main.bundlePath.hasPrefix("/Applications/") {
+            do {
+                try SMAppService.mainApp.register()
+                UserDefaults.standard.set(true, forKey: "didSetupLogin")
+            } catch {
+                NSLog("Wakey: login item register failed: \(error.localizedDescription)")  // tries again next launch
+            }
         }
 
         UserDefaults.standard.register(defaults: ["lightsOffOnLid": true])
@@ -202,7 +207,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.toolTip = "\(label)\nClick to switch"
         stateRow.title = awake ? "Awake: lid can close" : "Normal sleep"
         toggleRow.title = awake ? "Allow Sleep Again" : "Keep Awake with Lid Closed"
-        loginRow.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        let login = SMAppService.mainApp.status
+        loginRow.title = login == .requiresApproval ? "Open at Login (needs approval)" : "Open at Login"
+        loginRow.state = login == .enabled ? .on : login == .requiresApproval ? .mixed : .off
         lightsRow.state = lightsOffOnLid ? .on : .off
     }
 
@@ -219,11 +226,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func toggleLogin() {
-        if SMAppService.mainApp.status == .enabled {
-            try? SMAppService.mainApp.unregister()
-        } else {
-            try? SMAppService.mainApp.register()
+        let service = SMAppService.mainApp
+        do {
+            if service.status == .enabled {
+                try service.unregister()
+            } else if service.status != .requiresApproval {
+                try service.register()
+            }
+        } catch {
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "Couldn't change Open at Login"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
         }
+        // Needs the user's OK in System Settings.
+        if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
         refresh()
     }
 
