@@ -66,7 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     let keyboard = KeyboardLight()
     var lidWasClosed = false
-    var lightsAreOff = false          // set while we have the keyboard light off
+    var lightsAreOff = false {        // set while we have the keyboard light off; saved so a crash can't strand it
+        didSet { UserDefaults.standard.set(lightsAreOff, forKey: "lightsOffByWakey") }
+    }
     var recent: [(keyboard: Float?, screen: Float?)] = []   // last few readings while the lid is open
     var settling = 0                  // readings to skip right after the lid opens
     var lightsOffOnLid: Bool {
@@ -105,11 +107,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Watch the lid. Starting with the lid already shut doesn't count as closing it.
         lidWasClosed = lidClosed()
+        let d = UserDefaults.standard
+        if d.bool(forKey: "lightsOffByWakey") {
+            // Wakey died with the lights off: bring them back now, or keep them off until the lid opens.
+            if lidWasClosed { lightsAreOff = true } else { restoreLights() }
+        } else if !lidWasClosed, d.object(forKey: "lastKeyboardLevel") == nil || d.object(forKey: "lastScreenLevel") == nil {
+            // Nothing saved yet (first launch): save what we see now.
+            save((keyboard.level, ScreenLight.level))
+        }
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
     }
 
     func applicationWillTerminate(_ n: Notification) {
-        if lightsAreOff { restoreLights() }
+        // With the lid shut, leave the saved flag so the next launch restores the lights.
+        if lightsAreOff, !lidClosed() { restoreLights() }
     }
 
     func checkLid() {
@@ -118,6 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !closed { remember() }
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
+        if closed { recent.dropLast().forEach { save($0) } }  // keep older readings; the newest may be close-time dimming
         recent.removeAll()
         settling = 3
         if closed {
@@ -131,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return CGDisplayIsBuiltin(n.uint32Value) == 0
             }
             if !external { displaysOffNow() }
-        } else {
+        } else if lightsAreOff {
             restoreLights()
         }
     }
@@ -142,9 +154,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if settling > 0 { settling -= 1; return }
         recent.append((keyboard.level, ScreenLight.level))
         guard recent.count > 3 else { return }
-        let good = recent.removeFirst()
-        if let k = good.keyboard { UserDefaults.standard.set(k, forKey: "lastKeyboardLevel") }
-        if let s = good.screen, s > 0.02 { UserDefaults.standard.set(s, forKey: "lastScreenLevel") }
+        save(recent.removeFirst())
+    }
+
+    /// Saves one reading. Keyboard 0 (idle-off) and a screen reading of 0 (display off) are skipped.
+    func save(_ r: (keyboard: Float?, screen: Float?)) {
+        if let k = r.keyboard, k > 0.02 { UserDefaults.standard.set(k, forKey: "lastKeyboardLevel") }
+        if let s = r.screen, s > 0.001 { UserDefaults.standard.set(s, forKey: "lastScreenLevel") }
     }
 
     /// Puts the keyboard and screen back to their last lid-open levels. Applied a few times,
