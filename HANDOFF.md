@@ -5,7 +5,9 @@ Working and in daily use. The first 2026-10-11 audit fixes are merged into `main
 `/Applications/Wakey.app`; Vinnie tested them on 2026-10-11.
 A second audit (2026-10-11, report `tool-reviews/2026-10-11/wakey.md` in the project's shared files) is fixed,
 merged into `main` (PR #2), built and installed in `/Applications/Wakey.app` on 2026-10-11 (compiled cleanly).
-Not yet hand-tested; see "Next steps".
+Hand-tested 2026-10-11: the new rule install works (old `/etc/sudoers.d/sleeptoggle` removed, one password prompt
+installed `sleeptoggle-vinnie` root:wheel 0440, no staging file left), and a later click switched with no prompt.
+The rest is still to test; see "Next steps".
 Repo: `vinnieg73/wakey` (private).
 
 ## Done
@@ -37,7 +39,7 @@ Repo: `vinnieg73/wakey` (private).
 - `build.sh` and `make-icon.sh` are safer: a failed compile no longer wipes the old app, they work from
   their own folder (even through a symlink), and they clean up after themselves.
 
-### Second audit fixes (merged 2026-10-11, built and installed, not yet hand-tested)
+### Second audit fixes (merged 2026-10-11, installed, rule install tested)
 - Rule install: no temp file anymore. The root shell writes the exact rule text into a root-owned
   staging file in `/etc/sudoers.d`, sets root:wheel 0440, checks it with `visudo -cf`, then moves it
   into place. Same narrow rule, same file name.
@@ -58,11 +60,7 @@ Repo: `vinnieg73/wakey` (private).
   rare, no privilege gain, and renaming would re-prompt everyone).
 
 ## Next steps
-- Hand-test the second audit fixes on the Mac. Re-install the permission rule once to test the new install path.
-  This Mac still has the old rule file `/etc/sudoers.d/sleeptoggle` (no username suffix), so remove that:
-  `sudo rm /etc/sudoers.d/sleeptoggle`, then click the face; the password prompt should install
-  `/etc/sudoers.d/sleeptoggle-<username>`.
-- Then: VoiceOver "Show menu" action, Lights Off toggle with the lid shut, Open at Login refusal outside `/Applications`.
+- Still to hand-test: VoiceOver "Show menu" action, Lights Off toggle with the lid shut, Open at Login refusal outside `/Applications`.
 
 ## Decisions
 - Keep the display-off on lid close (2026-10-10). Vinnie wants the Mac to lock when the lid closes;
