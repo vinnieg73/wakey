@@ -23,7 +23,14 @@ func sleepDisabled() -> Bool {
     return false
 }
 
-let sudoersFile = "/etc/sudoers.d/sleeptoggle"
+// One rule file per user. sudo skips files with a '.' in the name, so anything odd becomes '_'.
+let sudoersFile: String = {
+    let safe = String(String.UnicodeScalarView(NSUserName().unicodeScalars.map { c -> Unicode.Scalar in
+        let ok = (c.value >= 48 && c.value <= 57) || (c.value >= 65 && c.value <= 90) || (c.value >= 97 && c.value <= 122) || c == "-" || c == "_"
+        return ok ? c : "_"
+    }))
+    return "/etc/sudoers.d/sleeptoggle-" + safe
+}()
 
 func sudoPmset(_ on: Bool) -> Bool {
     let p = Process()
@@ -42,7 +49,9 @@ func installRule() -> SwitchResult {
     let tmp = NSTemporaryDirectory() + "sleeptoggle.sudoers-" + UUID().uuidString
     guard (try? rule.write(toFile: tmp, atomically: true, encoding: .utf8)) != nil else { return .failed }
     defer { try? FileManager.default.removeItem(atPath: tmp) }
-    let sh = "/usr/sbin/visudo -cf '\(tmp)' && /usr/bin/install -m 0440 -o root -g wheel '\(tmp)' '\(sudoersFile)'"
+    // Copy to a root-owned staging file (the '.' makes sudo ignore it), check that copy, then move it into place.
+    let staged = "/etc/sudoers.d/.\((sudoersFile as NSString).lastPathComponent).new"
+    let sh = "/usr/bin/install -m 0440 -o root -g wheel '\(tmp)' '\(staged)' && { /usr/sbin/visudo -cf '\(staged)' && /bin/mv -f '\(staged)' '\(sudoersFile)'; } || { /bin/rm -f '\(staged)'; exit 1; }"
     let script = "do shell script \"\(sh)\" with prompt \"Wakey needs your password one last time so it can switch sleep without asking again.\" with administrator privileges"
     var err: NSDictionary?
     NSAppleScript(source: script)?.executeAndReturnError(&err)
@@ -70,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let toggleRow = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
     let loginRow = NSMenuItem(title: "Open at Login", action: #selector(toggleLogin), keyEquivalent: "")
     let lightsRow = NSMenuItem(title: "Lights Off When Lid Closes", action: #selector(toggleLights), keyEquivalent: "")
+    var activity: NSObjectProtocol?   // App Nap opt-out token
     var awake = false
     var busy = false                  // a switch is in progress
     var ignoreClicksUntil: TimeInterval = 0   // clicks queued before this time (system uptime) are dropped
@@ -118,7 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         refresh()
         // Pick up changes made elsewhere (for example in Terminal).
-        Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
+        let t5 = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
+        RunLoop.main.add(t5, forMode: .common)   // .common: keeps running while the menu is open
 
         // Watch the lid. Starting with the lid already shut doesn't count as closing it.
         lidWasClosed = lidClosed()
@@ -130,7 +141,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Nothing saved yet (first launch): save what we see now.
             save((keyboard.level, ScreenLight.level))
         }
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
+        let t1 = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
+        RunLoop.main.add(t1, forMode: .common)
+        // Stops App Nap from delaying the lid checks (the token must stay alive).
+        activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching the lid")
+    }
+
+    // Opening the app again brings back a hidden menu bar icon.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        item.isVisible = true
+        return true
     }
 
     func applicationWillTerminate(_ n: Notification) {
@@ -268,6 +288,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         refresh()
     }
+}
+
+// Only one Wakey at a time (e.g. build folder copy and /Applications copy).
+if let id = Bundle.main.bundleIdentifier,
+   NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0 != NSRunningApplication.current }) {
+    exit(0)
 }
 
 let app = NSApplication.shared
