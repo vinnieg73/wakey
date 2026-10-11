@@ -1,10 +1,9 @@
 # Wakey handoff
 
 ## Status
-Audit fixes are on branch `fix/audit-2026-10-11`. They are NOT built or tested on the Mac yet
-(there is no Swift compiler in the cloud). `main` is the last version that was tested and in daily use.
-Repo: `vinnieg73/wakey` (private). Installed copy lives in `/Applications/Wakey.app`.
-The audit report is in the project's shared files as `wakey-audit-2026-10-11.md`.
+Working and in daily use. The 2026-10-11 audit fixes are merged into `main` (PR #1) and installed in
+`/Applications/Wakey.app`. Vinnie tested them on 2026-10-11, with and without external displays, and they work as intended.
+Repo: `vinnieg73/wakey` (private). The audit report is in the project's shared files as `wakey-audit-2026-10-11.md`.
 
 ## Done
 - Menu bar face toggles `pmset -a disablesleep 0|1` (orange/smiling = awake, blue/sleepy = normal sleep).
@@ -15,7 +14,7 @@ The audit report is in the project's shared files as `wakey-audit-2026-10-11.md`
 - Verified 2026-10-10 (before the audit fixes): with awake mode on and lid closed from 10:05 to 16:16 EDT,
   the pmset log has zero "Entering Sleep" entries. The Mac stayed awake; the display just turned off.
 
-### Audit fixes (branch fix/audit-2026-10-11, untested)
+### Audit fixes (merged 2026-10-11, tested on the Mac)
 - Lights are restored only if Wakey was the one that dimmed them.
 - It never saves a keyboard level of 0 as the level to come back to.
 - A "lights are off" flag is saved to disk. If Wakey crashes, the next launch brings the lights back
@@ -36,11 +35,8 @@ The audit report is in the project's shared files as `wakey-audit-2026-10-11.md`
   their own folder (even through a symlink), and they clean up after themselves.
 
 ## Next steps
-1. On the Mac, build from the branch: `./build.sh`.
-2. Quit Wakey, remove the old app, copy the new one to `/Applications`, open it (see README).
-3. Test in awake mode: close the lid, check keyboard light and screen go off; open it, check they come back.
-4. Test one toggle (awake and back to normal sleep).
-5. If all is good, merge `fix/audit-2026-10-11` into `main`.
+- None required. The Mac checkout in `~/Code/Utilities/SleepToggle` is still on branch
+  `fix/audit-2026-10-11`; switch it back with `git checkout main && git pull`.
 
 ## Decisions
 - Keep the display-off on lid close (2026-10-10). Vinnie wants the Mac to lock when the lid closes;
