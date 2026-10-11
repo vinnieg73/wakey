@@ -42,30 +42,49 @@ func sudoPmset(_ on: Bool) -> Bool {
     return p.terminationStatus == 0
 }
 
+/// Wraps text in single quotes for /bin/sh.
+func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+
 /// One-time setup (asks for the password once): lets this user run ONLY
 /// `pmset -a disablesleep 0` and `pmset -a disablesleep 1` without a password.
 func installRule() -> SwitchResult {
-    let rule = "\(NSUserName()) ALL=(root) NOPASSWD: \(pmset) -a disablesleep 0, \(pmset) -a disablesleep 1\n"
-    let tmp = NSTemporaryDirectory() + "sleeptoggle.sudoers-" + UUID().uuidString
-    guard (try? rule.write(toFile: tmp, atomically: true, encoding: .utf8)) != nil else { return .failed }
-    defer { try? FileManager.default.removeItem(atPath: tmp) }
-    // Copy to a root-owned staging file (the '.' makes sudo ignore it), check that copy, then move it into place.
-    let staged = "/etc/sudoers.d/.\((sudoersFile as NSString).lastPathComponent).new"
-    let sh = "/usr/bin/install -m 0440 -o root -g wheel '\(tmp)' '\(staged)' && { /usr/sbin/visudo -cf '\(staged)' && /bin/mv -f '\(staged)' '\(sudoersFile)'; } || { /bin/rm -f '\(staged)'; exit 1; }"
-    let script = "do shell script \"\(sh)\" with prompt \"Wakey needs your password one last time so it can switch sleep without asking again.\" with administrator privileges"
+    let rule = "\(NSUserName()) ALL=(root) NOPASSWD: \(pmset) -a disablesleep 0, \(pmset) -a disablesleep 1"
+    // The root shell writes the rule itself into a root-owned staging file (the '.' makes sudo ignore it),
+    // checks that file, then moves it into place. No user-writable file is involved at any point.
+    let staged = shQuote("/etc/sudoers.d/.\((sudoersFile as NSString).lastPathComponent).new")
+    let sh = "/bin/rm -f \(staged) && (umask 0337 && printf '%s\\n' \(shQuote(rule)) > \(staged))"
+        + " && /usr/sbin/chown root:wheel \(staged) && /bin/chmod 0440 \(staged)"
+        + " && /usr/sbin/visudo -cf \(staged) && /bin/mv -f \(staged) \(shQuote(sudoersFile))"
+        + " || { /bin/rm -f \(staged); exit 1; }"
+    // AppleScript string: escape backslashes and double quotes.
+    let asString = sh.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    let script = "do shell script \"\(asString)\" with prompt \"Wakey needs your password one last time so it can switch sleep without asking again.\" with administrator privileges"
     var err: NSDictionary?
     NSAppleScript(source: script)?.executeAndReturnError(&err)
     if err == nil { return .done }
     return (err?[NSAppleScript.errorNumber] as? Int) == -128 ? .cancelled : .failed   // -128: user cancelled
 }
 
-enum SwitchResult { case done, cancelled, failed }
+/// True when sudo already lets this user run the pmset command without a password
+/// (the rule is installed and works), so a failure came from pmset itself.
+func ruleAllows(_ on: Bool) -> Bool {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
+    p.arguments = ["-n", "-l", pmset, "-a", "disablesleep", on ? "1" : "0"]
+    p.standardOutput = Pipe(); p.standardError = Pipe()
+    guard (try? p.run()) != nil else { return false }
+    p.waitUntilExit()
+    return p.terminationStatus == 0
+}
+
+enum SwitchResult { case done, cancelled, failed, pmsetFailed }
 
 var askedForPassword = false   // set when the password box was shown
 
 func setSleepDisabled(_ on: Bool) -> SwitchResult {
     askedForPassword = false
     if sudoPmset(on) { return .done }
+    if ruleAllows(on) { return .pmsetFailed }   // rule works, pmset failed: asking for the password won't help
     askedForPassword = true
     let r = installRule()
     guard r == .done else { return r }
@@ -275,14 +294,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggle() {
         guard !busy else { return }
         busy = true
+        defer { busy = false }   // stays set while the alert is open, so clicks during it can't start another switch
         let result = setSleepDisabled(!sleepDisabled())   // read the real state, not the cached one
         if askedForPassword { ignoreClicksUntil = ProcessInfo.processInfo.systemUptime }
-        busy = false
-        if result == .failed {   // cancelling the password prompt stays silent and leaves it unchanged
+        if result == .failed || result == .pmsetFailed {   // cancelling the password prompt stays silent and leaves it unchanged
             NSApp.activate(ignoringOtherApps: true)
             let a = NSAlert()
             a.messageText = "Wakey couldn't switch sleep"
-            a.informativeText = "Switching needs an administrator account, and its password once, the first time."
+            a.informativeText = result == .pmsetFailed
+                ? "The permission is set up, but pmset itself failed. Try again, or run \"pmset -g\" in Terminal to check."
+                : "Switching needs an administrator account, and its password once, the first time."
             a.runModal()
             ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
         }
