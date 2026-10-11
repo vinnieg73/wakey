@@ -1,9 +1,12 @@
 # Wakey handoff
 
 ## Status
-Working and in daily use. The 2026-10-11 audit fixes are merged into `main` (PR #1) and installed in
-`/Applications/Wakey.app`. Vinnie tested them on 2026-10-11, with and without external displays, and they work as intended.
-Repo: `vinnieg73/wakey` (private). The audit report is in the project's shared files as `wakey-audit-2026-10-11.md`.
+Working and in daily use. The first 2026-10-11 audit fixes are merged into `main` (PR #1) and installed in
+`/Applications/Wakey.app`; Vinnie tested them on 2026-10-11.
+A second audit (2026-10-11, report `tool-reviews/2026-10-11/wakey.md` in the project's shared files) is fixed
+on branch `fix/audit-2026-10-11` (new branch from `dd1db9d`, not pushed). Not compiled or tested yet: there
+was no Swift compiler where it was written. See "Next steps".
+Repo: `vinnieg73/wakey` (private).
 
 ## Done
 - Menu bar face toggles `pmset -a disablesleep 0|1` (orange/smiling = awake, blue/sleepy = normal sleep).
@@ -34,9 +37,32 @@ Repo: `vinnieg73/wakey` (private). The audit report is in the project's shared f
 - `build.sh` and `make-icon.sh` are safer: a failed compile no longer wipes the old app, they work from
   their own folder (even through a symlink), and they clean up after themselves.
 
+### Second audit fixes (branch `fix/audit-2026-10-11`, not yet built or tested)
+- Rule install: no temp file anymore. The root shell writes the exact rule text into a root-owned
+  staging file in `/etc/sudoers.d`, sets root:wheel 0440, checks it with `visudo -cf`, then moves it
+  into place. Same narrow rule, same file name.
+- If `pmset` fails but `sudo -n -l` shows the rule already allows it, Wakey shows a "pmset itself failed"
+  alert instead of asking for the password again.
+- Clicks while the failure alert is open can't start another switch.
+- VoiceOver: the menu bar button has a "Show menu" action (VO-Command-Space on the button). A normal
+  click or VoiceOver press still switches.
+- Open at Login from the menu: refuses (with an alert) outside `/Applications`; turning it on or off marks
+  the login setup as done, so a later launch won't re-register it.
+- Lights Off menu item works with the lid shut: unticking stops holding the keyboard light at 0,
+  ticking turns the lights off right away.
+- Docs: Undo command is zsh-safe, upgrade steps wait for the old copy to quit, README says the lights come
+  back on the next launch if Wakey quits with the lid shut. `make-icon.sh` now follows symlinks.
+- Not fixed, by choice: #8 (a keyboard light you turned off yourself is relit after a lid cycle; needs a
+  design choice since manual-off looks like idle-off), #9 (Normal-mode save/settle; not provable, and the
+  Mac sleeps at lid close in Normal mode anyway), #10 (rule file name collision for names like `a.b`/`a_b`;
+  rare, no privilege gain, and renaming would re-prompt everyone).
+
 ## Next steps
-- None required. The Mac checkout in `~/Code/Utilities/SleepToggle` is still on branch
-  `fix/audit-2026-10-11`; switch it back with `git checkout main && git pull`.
+- Push the branch (the name `fix/audit-2026-10-11` already exists on GitHub from the first audit, at
+  `bb4ec5d`; the new commits build on top of it, so the push is a fast-forward).
+- On the Mac, in `~/Code/Utilities/SleepToggle` (still on that branch): `git pull`, build, install, test,
+  then merge to `main`. Re-install the permission rule once to test the new install path:
+  `sudo rm /etc/sudoers.d/sleeptoggle-$(whoami)`, then click the face.
 
 ## Decisions
 - Keep the display-off on lid close (2026-10-10). Vinnie wants the Mac to lock when the lid closes;
@@ -59,7 +85,11 @@ Repo: `vinnieg73/wakey` (private). The audit report is in the project's shared f
 - The sudo rule file is now `/etc/sudoers.d/sleeptoggle-<username>`. Older installs may still have
   `/etc/sudoers.d/sleeptoggle`, which still works.
 - Undo: turn sleep back on first (`sudo pmset -a disablesleep 0`), quit Wakey, turn off Open at Login,
-  then `sudo rm -f /etc/sudoers.d/sleeptoggle /etc/sudoers.d/sleeptoggle-*`.
+  then `sudo sh -c 'rm -f /etc/sudoers.d/sleeptoggle /etc/sudoers.d/sleeptoggle-*'` (the quotes keep zsh
+  from stopping on an unmatched glob).
+- Quitting with the lid shut and the lights off leaves the keyboard dark until Wakey starts again
+  (on purpose, so a crash can't strand it the other way).
+- The menu's Open at Login only works from `/Applications`.
 - Overwriting the running app in place can leave old code running or get it killed. Quit and `rm -rf`
   the old app before copying.
 - Build output goes to `build.noindex/` so Spotlight doesn't index a second Wakey.app.
