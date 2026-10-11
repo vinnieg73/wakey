@@ -15,7 +15,8 @@ A menu bar switch that keeps your Mac awake, even with the lid closed.
 Only works in awake mode. When you close the lid, Wakey turns the keyboard light off and the screen off.
 Turning the screen off locks the Mac. That is on purpose.
 If an external display is attached, only the keyboard light goes off (the screens stay on).
-The lights come back when you open the lid.
+The lights come back when you open the lid. If Wakey quits (or crashes) while the lid is shut, they come
+back the next time Wakey starts instead.
 
 ## How switching works
 
@@ -33,6 +34,7 @@ it running old code, or get it killed.
 ```bash
 ./build.sh                                   # builds build.noindex/Wakey.app
 osascript -e 'quit app "Wakey"'
+while pgrep -xq Wakey; do sleep 0.2; done    # wait until the old copy has exited
 rm -rf /Applications/Wakey.app
 cp -R build.noindex/Wakey.app /Applications/
 open /Applications/Wakey.app
@@ -48,5 +50,5 @@ Turn sleep back on first, or the Mac will never sleep.
 3. Remove the rule file:
 
 ```bash
-sudo rm -f /etc/sudoers.d/sleeptoggle /etc/sudoers.d/sleeptoggle-*
+sudo sh -c 'rm -f /etc/sudoers.d/sleeptoggle /etc/sudoers.d/sleeptoggle-*'
 ```
