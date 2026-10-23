@@ -32,14 +32,24 @@ let sudoersFile: String = {
     return "/etc/sudoers.d/sleeptoggle-" + safe
 }()
 
-func sudoPmset(_ on: Bool) -> Bool {
+let legacySudoersFile = "/etc/sudoers.d/sleeptoggle"   // older installs: one shared file
+
+/// True when Wakey's rule file (or the legacy one) is in /etc/sudoers.d. Only checks that it exists.
+func ruleFileExists() -> Bool {
+    FileManager.default.fileExists(atPath: sudoersFile) || FileManager.default.fileExists(atPath: legacySudoersFile)
+}
+
+/// Runs pmset through sudo without a password. Returns whether it worked, and what went to stderr.
+func sudoPmset(_ on: Bool) -> (ok: Bool, err: String) {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
     p.arguments = ["-n", pmset, "-a", "disablesleep", on ? "1" : "0"]
-    p.standardOutput = Pipe(); p.standardError = Pipe()
-    guard (try? p.run()) != nil else { return false }
+    let errPipe = Pipe()
+    p.standardOutput = FileHandle.nullDevice; p.standardError = errPipe
+    guard (try? p.run()) != nil else { return (false, "") }
+    let err = String(decoding: errPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     p.waitUntilExit()
-    return p.terminationStatus == 0
+    return (p.terminationStatus == 0, err)
 }
 
 /// Wraps text in single quotes for /bin/sh.
@@ -65,30 +75,20 @@ func installRule() -> SwitchResult {
     return (err?[NSAppleScript.errorNumber] as? Int) == -128 ? .cancelled : .failed   // -128: user cancelled
 }
 
-/// True when sudo already lets this user run the pmset command without a password
-/// (the rule is installed and works), so a failure came from pmset itself.
-func ruleAllows(_ on: Bool) -> Bool {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-    p.arguments = ["-n", "-l", pmset, "-a", "disablesleep", on ? "1" : "0"]
-    p.standardOutput = Pipe(); p.standardError = Pipe()
-    guard (try? p.run()) != nil else { return false }
-    p.waitUntilExit()
-    return p.terminationStatus == 0
-}
-
-enum SwitchResult { case done, cancelled, failed, pmsetFailed }
-
 var askedForPassword = false   // set when the password box was shown
 
 func setSleepDisabled(_ on: Bool) -> SwitchResult {
     askedForPassword = false
-    if sudoPmset(on) { return .done }
-    if ruleAllows(on) { return .pmsetFailed }   // rule works, pmset failed: asking for the password won't help
+    let first = sudoPmset(on)
+    if first.ok { return .done }
+    // Our rule is there and sudo ran pmset, so pmset failed: asking for the password won't help.
+    // (`sudo -n -l` can't tell this: any other NOPASSWD rule makes it pass. See Logic.swift.)
+    if !failureNeedsRule(ruleFileExists: ruleFileExists(), sudoStderr: first.err) { return .pmsetFailed }
     askedForPassword = true
     let r = installRule()
     guard r == .done else { return r }
-    return sudoPmset(on) ? .done : .failed
+    let again = sudoPmset(on)
+    return again.ok ? .done : resultAfterInstall(sudoStderr: again.err)
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -327,13 +327,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defer { busy = false }   // stays set while the alert is open, so clicks during it can't start another switch
         let result = setSleepDisabled(!sleepDisabled())   // read the real state, not the cached one
         if askedForPassword { ignoreClicksUntil = ProcessInfo.processInfo.systemUptime }
-        if result == .failed || result == .pmsetFailed {   // cancelling the password prompt stays silent and leaves it unchanged
+        if result == .failed || result == .pmsetFailed || result == .ruleOverridden {   // cancelling the password prompt stays silent and leaves it unchanged
             NSApp.activate(ignoringOtherApps: true)
             let a = NSAlert()
             a.messageText = "Wakey couldn't switch sleep"
-            a.informativeText = result == .pmsetFailed
-                ? "The permission is set up, but pmset itself failed. Try again, or run \"pmset -g\" in Terminal to check."
-                : "Switching needs an administrator account, and its password once, the first time."
+            switch result {
+            case .pmsetFailed:
+                a.informativeText = "The permission is set up, but pmset itself failed. Try again, or run \"pmset -g\" in Terminal to check."
+            case .ruleOverridden:
+                a.informativeText = "Wakey's permission is installed, but another sudo rule on this Mac overrides it. Check the other files in /etc/sudoers.d."
+            default:
+                a.informativeText = "Switching needs an administrator account, and its password once, the first time."
+            }
             a.runModal()
             ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
         }
