@@ -31,7 +31,8 @@ enum LogicTests {
         // Rule file there, but a later sudoers file overrides it: sudo still wants a password.
         check(failureNeedsRule(ruleFileExists: true, sudoStderr: needsPassword), "rule file, password -> install")
         check(failureNeedsRule(ruleFileExists: true, sudoStderr: notAllowed), "rule file, not allowed -> install")
-        check(failureNeedsRule(ruleFileExists: true, sudoStderr: "sudo: unable to read /etc/sudoers.d/x\n"), "rule file, other sudo error -> install")
+        // A sudo warning that still runs pmset is not a refusal.
+        check(!failureNeedsRule(ruleFileExists: true, sudoStderr: "sudo: unable to resolve host mac: nodename nor servname provided\n"), "rule file, sudo warning, pmset failed -> pmset failed")
         // Rule file there and sudo ran pmset: the failure is pmset's own.
         check(!failureNeedsRule(ruleFileExists: true, sudoStderr: ""), "rule file, silent pmset failure -> pmset failed")
         check(!failureNeedsRule(ruleFileExists: true, sudoStderr: "pmset: Usage error\n"), "rule file, pmset error -> pmset failed")
@@ -84,8 +85,8 @@ enum LogicTests {
     // Audit 2026-10-23 Low: a screen dimmed before display sleep, or asleep, is not saved.
     static func dimmedScreen() {
         check(screenReadingUsable(idleSeconds: 0.5, displayAsleep: false), "in use -> kept")
-        check(screenReadingUsable(idleSeconds: 9.9, displayAsleep: false), "idle under 10 s -> kept")
-        check(!screenReadingUsable(idleSeconds: 10, displayAsleep: false), "idle 10 s -> dropped")
+        check(screenReadingUsable(idleSeconds: 29.9, displayAsleep: false), "idle under 30 s (reading, a video) -> kept")
+        check(!screenReadingUsable(idleSeconds: 30, displayAsleep: false), "idle 30 s -> dropped")
         check(!screenReadingUsable(idleSeconds: 95, displayAsleep: false), "idle dim before display sleep -> dropped")
         check(!screenReadingUsable(idleSeconds: 1, displayAsleep: true), "display asleep -> dropped")
     }

@@ -83,13 +83,19 @@ All 5 findings fixed, in the report's order. Nothing skipped. The decision rules
    a tolerance (3 s, 0.2 s). Not switched to an IOKit lid notification (`kIOPMMessageClamshellStateChange`):
    it can't be tried without the Mac, and `checkLid()` would still need its timer to re-zero the keyboard and
    sample levels. Trade-offs: a change made in Terminal shows on the icon within ~15 s instead of ~5 s; in
-   normal mode the saved light level lags by ~15 s instead of ~3 s.
+   normal mode the saved light level lags by ~15 s instead of ~3 s; after an out-of-Wakey switch to awake,
+   Wakey reads levels at the normal-mode rate until its next 15 s state poll.
 5. Low (optional), dimmed screen saved. A screen reading is not kept when there's been no keyboard, mouse or
-   trackpad input for 10 s (`CGEventSource.secondsSinceLastEventType`) or the built-in display is asleep
-   (`CGDisplayIsAsleep`). Keyboard readings are unchanged.
+   trackpad input for 30 s (`CGEventSource.secondsSinceLastEventType`) or the built-in display is asleep
+   (`CGDisplayIsAsleep`). Keyboard readings are unchanged (a keyboard light caught mid-fade by "turn off after
+   inactivity" can still be saved; that was not in the report). 30 s is a guess at "before the dim": display sleep
+   is at least 1 minute of idle; the Mac test plan checks it.
 
 How it was tested (Linux, no Mac): `tests/run.sh` with a Swift 5.10 toolchain, 34 passed / 0 failed;
-`swiftc -parse` on all four Swift files; and a type-check of `main.swift` + `Logic.swift` against stub
+`swiftc -parse` on all four Swift files; a bug review of the diff (the code-review skill; the Agent tool for a
+separate helper wasn't available in that session), whose real findings were fixed (window check by window number,
+no "sudo:" prefix rule since sudo warnings still run pmset, settling counted in seconds, 30 s idle limit);
+and a type-check of `main.swift` + `Logic.swift` against stub
 AppKit/ServiceManagement modules (scratch only, not in the repo), clean. `Lid.swift`'s two additions
 (`userIdleSeconds()`, `ScreenLight.isAsleep`) were only parsed, not type-checked. Nothing ran on the Mac.
 

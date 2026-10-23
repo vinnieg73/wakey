@@ -193,7 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let closed = lidClosed()
         lidTick += 1
         if closed, lightsAreOff, lightsOffOnLid, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
-        if !closed, readLevelsNow(tick: lidTick, awake: awake) { remember() }   // every 5 s in normal mode
+        if !closed, settling > 0 || readLevelsNow(tick: lidTick, awake: awake) { remember() }   // every 5 s in normal mode; settling counts seconds
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
         if closed { recent.dropLast().forEach { save($0) } }  // keep older readings; the newest may be close-time dimming
@@ -287,7 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let e { lastClickEvent = (e.type, e.timestamp) }
         let action = clickAction(
             mouseUp: e?.type == .leftMouseUp || e?.type == .rightMouseUp,
-            otherWindow: e?.window != nil && e?.window !== item.button?.window,
+            otherWindow: (e?.windowNumber ?? 0) != 0 && e?.windowNumber != item.button?.window?.windowNumber,   // the number outlives a freed alert
             seenBefore: seen,
             right: e?.type == .rightMouseUp,
             control: e?.modifierFlags.contains(.control) == true,

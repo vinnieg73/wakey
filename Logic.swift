@@ -9,8 +9,7 @@ func sudoRefused(_ stderr: String) -> Bool {
     let s = stderr.lowercased()
     return s.contains("password")                          // "sudo: a password is required"
         || s.contains("not allowed to execute")            // "Sorry, user x is not allowed to execute ..."
-        || s.contains("not in the sudoers")
-        || s.split(separator: "\n").contains { $0.hasPrefix("sudo:") }
+        || s.contains("not in the sudoers")   // other "sudo: ..." lines can be warnings, with pmset still run
 }
 
 /// After `sudo -n pmset` failed: the failure is pmset's own only when Wakey's rule file (or the legacy one)
@@ -55,7 +54,7 @@ func readLevelsNow(tick: Int, awake: Bool) -> Bool {
 
 /// macOS dims the screen only after a stretch with no input (before display sleep), and nobody changes
 /// the brightness without input, so a screen reading taken after this much idle time is not kept.
-let idleBeforeDim: Double = 10
+let idleBeforeDim: Double = 30   // display sleep is at least 1 minute of idle, and the dim comes shortly before it
 
 /// Whether a screen brightness reading is worth keeping as the level to come back to.
 func screenReadingUsable(idleSeconds: Double, displayAsleep: Bool) -> Bool {
