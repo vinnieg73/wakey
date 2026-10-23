@@ -32,14 +32,24 @@ let sudoersFile: String = {
     return "/etc/sudoers.d/sleeptoggle-" + safe
 }()
 
-func sudoPmset(_ on: Bool) -> Bool {
+let legacySudoersFile = "/etc/sudoers.d/sleeptoggle"   // older installs: one shared file
+
+/// True when Wakey's rule file (or the legacy one) is in /etc/sudoers.d. Only checks that it exists.
+func ruleFileExists() -> Bool {
+    FileManager.default.fileExists(atPath: sudoersFile) || FileManager.default.fileExists(atPath: legacySudoersFile)
+}
+
+/// Runs pmset through sudo without a password. Returns whether it worked, and what went to stderr.
+func sudoPmset(_ on: Bool) -> (ok: Bool, err: String) {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
     p.arguments = ["-n", pmset, "-a", "disablesleep", on ? "1" : "0"]
-    p.standardOutput = Pipe(); p.standardError = Pipe()
-    guard (try? p.run()) != nil else { return false }
+    let errPipe = Pipe()
+    p.standardOutput = FileHandle.nullDevice; p.standardError = errPipe
+    guard (try? p.run()) != nil else { return (false, "") }
+    let err = String(decoding: errPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
     p.waitUntilExit()
-    return p.terminationStatus == 0
+    return (p.terminationStatus == 0, err)
 }
 
 /// Wraps text in single quotes for /bin/sh.
@@ -65,30 +75,20 @@ func installRule() -> SwitchResult {
     return (err?[NSAppleScript.errorNumber] as? Int) == -128 ? .cancelled : .failed   // -128: user cancelled
 }
 
-/// True when sudo already lets this user run the pmset command without a password
-/// (the rule is installed and works), so a failure came from pmset itself.
-func ruleAllows(_ on: Bool) -> Bool {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-    p.arguments = ["-n", "-l", pmset, "-a", "disablesleep", on ? "1" : "0"]
-    p.standardOutput = Pipe(); p.standardError = Pipe()
-    guard (try? p.run()) != nil else { return false }
-    p.waitUntilExit()
-    return p.terminationStatus == 0
-}
-
-enum SwitchResult { case done, cancelled, failed, pmsetFailed }
-
 var askedForPassword = false   // set when the password box was shown
 
 func setSleepDisabled(_ on: Bool) -> SwitchResult {
     askedForPassword = false
-    if sudoPmset(on) { return .done }
-    if ruleAllows(on) { return .pmsetFailed }   // rule works, pmset failed: asking for the password won't help
+    let first = sudoPmset(on)
+    if first.ok { return .done }
+    // Our rule is there and sudo ran pmset, so pmset failed: asking for the password won't help.
+    // (`sudo -n -l` can't tell this: any other NOPASSWD rule makes it pass. See Logic.swift.)
+    if !failureNeedsRule(ruleFileExists: ruleFileExists(), sudoStderr: first.err) { return .pmsetFailed }
     askedForPassword = true
     let r = installRule()
     guard r == .done else { return r }
-    return sudoPmset(on) ? .done : .failed
+    let again = sudoPmset(on)
+    return again.ok ? .done : resultAfterInstall(sudoStderr: again.err)
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var awake = false
     var busy = false                  // a switch is in progress
     var ignoreClicksUntil: TimeInterval = 0   // clicks queued before this time (system uptime) are dropped
+    var lastClickEvent: (type: NSEvent.EventType, time: TimeInterval)?   // the event the button's last press saw
 
     let keyboard = KeyboardLight()
     var lidWasClosed = false
@@ -110,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     var recent: [(keyboard: Float?, screen: Float?)] = []   // last few readings while the lid is open
     var settling = 0                  // readings to skip right after the lid opens
+    var lidTick = 0                   // counts lid checks, for the slower level reads in normal mode
     var lightsOffOnLid: Bool {
         get { UserDefaults.standard.bool(forKey: "lightsOffOnLid") }
         set { UserDefaults.standard.set(newValue, forKey: "lightsOffOnLid") }
@@ -153,9 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         UserDefaults.standard.register(defaults: ["lightsOffOnLid": true])
 
         refresh()
-        // Pick up changes made elsewhere (for example in Terminal).
-        let t5 = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
-        RunLoop.main.add(t5, forMode: .common)   // .common: keeps running while the menu is open
+        // Pick up changes made elsewhere (for example in Terminal). A click and opening the menu read the
+        // real state anyway, so this only keeps the icon honest; every 15 s is enough.
+        let t15 = Timer(timeInterval: 15, repeats: true) { [weak self] _ in self?.refreshState() }
+        t15.tolerance = 3
+        RunLoop.main.add(t15, forMode: .common)   // .common: keeps running while the menu is open
 
         // Watch the lid. Starting with the lid already shut doesn't count as closing it.
         lidWasClosed = lidClosed()
@@ -168,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             save((keyboard.level, ScreenLight.level))
         }
         let t1 = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
+        t1.tolerance = 0.2
         RunLoop.main.add(t1, forMode: .common)
         // Stops App Nap from delaying the lid checks (the token must stay alive).
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching the lid")
@@ -186,8 +191,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func checkLid() {
         let closed = lidClosed()
+        lidTick += 1
         if closed, lightsAreOff, lightsOffOnLid, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
-        if !closed { remember() }
+        if !closed, settling > 0 || readLevelsNow(tick: lidTick, awake: awake) { remember() }   // every 5 s in normal mode; settling counts seconds
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
         if closed { recent.dropLast().forEach { save($0) } }  // keep older readings; the newest may be close-time dimming
@@ -214,16 +220,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !external { displaysOffNow() }
     }
 
-    /// Saves the keyboard and screen levels from 3 seconds ago, so dimming while the lid
-    /// is closing (or just after it opens) never gets saved as the level to come back to.
+    /// Saves the keyboard and screen levels from 3 readings ago (3 s in awake mode, 15 s in normal mode),
+    /// so dimming while the lid is closing (or just after it opens) never gets saved as the level to come back to.
     func remember() {
         if settling > 0 { settling -= 1; return }
-        recent.append((keyboard.level, ScreenLight.level))
+        // A screen dimmed before display sleep (or asleep) must not become the level to come back to.
+        let screenOK = screenReadingUsable(idleSeconds: userIdleSeconds(), displayAsleep: ScreenLight.isAsleep)
+        recent.append((keyboard.level, screenOK ? ScreenLight.level : nil))
         guard recent.count > 3 else { return }
         save(recent.removeFirst())
     }
 
-    /// Saves one reading. Keyboard 0 (idle-off) and a screen reading of 0 (display off) are skipped.
+    /// Saves one reading. Keyboard 0 (idle-off), a screen reading of 0 (display off) and a missing
+    /// reading (nil, also used for a screen dimmed or asleep) are skipped.
     func save(_ r: (keyboard: Float?, screen: Float?)) {
         if let k = r.keyboard, k > 0.02 { UserDefaults.standard.set(k, forKey: "lastKeyboardLevel") }
         if let s = r.screen, s > 0.001 { UserDefaults.standard.set(s, forKey: "lastScreenLevel") }
@@ -248,7 +257,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Everything, including the login item status (an XPC call), for the menu and after changes.
     func refresh() {
+        refreshState()
+        let login = SMAppService.mainApp.status
+        loginRow.title = login == .requiresApproval ? "Open at Login (needs approval)" : "Open at Login"
+        loginRow.state = login == .enabled ? .on : login == .requiresApproval ? .mixed : .off
+    }
+
+    /// The sleep state, the icon and the menu titles. The timer runs only this part.
+    func refreshState() {
         awake = sleepDisabled()
         let label = awake ? "Staying awake with lid closed" : "Normal sleep"
         let img = awake ? awakeIcon : sleepIcon
@@ -258,19 +276,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.toolTip = "\(label)\nClick to switch"
         stateRow.title = awake ? "Awake: lid can close" : "Normal sleep"
         toggleRow.title = awake ? "Allow Sleep Again" : "Keep Awake with Lid Closed"
-        let login = SMAppService.mainApp.status
-        loginRow.title = login == .requiresApproval ? "Open at Login (needs approval)" : "Open at Login"
-        loginRow.state = login == .enabled ? .on : login == .requiresApproval ? .mixed : .off
         lightsRow.state = lightsOffOnLid ? .on : .off
     }
 
     @objc func clicked() {
+        // A VoiceOver press has no event of its own: currentEvent is whatever the app handled last
+        // (an old click, the Return that closed an alert). Only a new mouse-up on the button is a click.
         let e = NSApp.currentEvent
-        if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
-            showMenu()
-        } else {
-            if let t = e?.timestamp, t < ignoreClicksUntil { return }   // queued during the password box
-            toggle()
+        let seen = e.map { lastClickEvent?.type == $0.type && lastClickEvent?.time == $0.timestamp } ?? false
+        if let e { lastClickEvent = (e.type, e.timestamp) }
+        let action = clickAction(
+            mouseUp: e?.type == .leftMouseUp || e?.type == .rightMouseUp,
+            otherWindow: (e?.windowNumber ?? 0) != 0 && e?.windowNumber != item.button?.window?.windowNumber,   // the number outlives a freed alert
+            seenBefore: seen,
+            right: e?.type == .rightMouseUp,
+            control: e?.modifierFlags.contains(.control) == true,
+            time: e?.timestamp ?? 0,
+            ignoreUntil: ignoreClicksUntil)   // clicks queued during the password box or the alert are dropped
+        switch action {
+        case .menu: showMenu()
+        case .toggle: toggle()
+        case .ignore: break
         }
     }
 
@@ -325,18 +351,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !busy else { return }
         busy = true
         defer { busy = false }   // stays set while the alert is open, so clicks during it can't start another switch
-        let result = setSleepDisabled(!sleepDisabled())   // read the real state, not the cached one
+        let on = !sleepDisabled()   // read the real state, not the cached one
+        let result = setSleepDisabled(on)
         if askedForPassword { ignoreClicksUntil = ProcessInfo.processInfo.systemUptime }
-        if result == .failed || result == .pmsetFailed {   // cancelling the password prompt stays silent and leaves it unchanged
+        if result == .failed || result == .pmsetFailed || result == .ruleOverridden {   // cancelling the password prompt stays silent and leaves it unchanged
             NSApp.activate(ignoringOtherApps: true)
             let a = NSAlert()
             a.messageText = "Wakey couldn't switch sleep"
-            a.informativeText = result == .pmsetFailed
-                ? "The permission is set up, but pmset itself failed. Try again, or run \"pmset -g\" in Terminal to check."
-                : "Switching needs an administrator account, and its password once, the first time."
+            switch result {
+            case .pmsetFailed:
+                a.informativeText = "The permission is set up, but pmset itself failed. Try again, or run \"pmset -g\" in Terminal to check."
+            case .ruleOverridden:
+                a.informativeText = "Wakey's permission is installed, but another sudo rule on this Mac overrides it. Check the other files in /etc/sudoers.d."
+            default:
+                a.informativeText = "Switching needs an administrator account, and its password once, the first time."
+            }
             a.runModal()
             ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
         }
+        if lightsOffAfterSwitch(result: result, nowAwake: on, lidShut: lidClosed()) { lightsOff() }
         refresh()
     }
 }

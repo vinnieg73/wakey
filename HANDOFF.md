@@ -9,6 +9,8 @@ Hand-tested 2026-10-11: the new rule install works (old `/etc/sudoers.d/sleeptog
 installed `sleeptoggle-vinnie` root:wheel 0440, no staging file left), and a later click switched with no prompt.
 Also tested: the VoiceOver "Show menu" action opens the menu without switching; Open at Login from a
 build-folder copy refuses to turn on (alert shown, nothing registered). Only the lid-shut Lights Off toggle is left.
+A third audit (2026-10-23, report `tool-reviews/2026-10-23/wakey.md`: 0 High, 1 Medium, 4 Low) is fixed on branch
+`fix/audit-2026-10-23`. Not merged, not built or installed yet: see "Mac test plan (audit 2026-10-23)".
 Repo: `vinnieg73/wakey` (private).
 
 ## Done
@@ -60,7 +62,95 @@ Repo: `vinnieg73/wakey` (private).
   Mac sleeps at lid close in Normal mode anyway), #10 (rule file name collision for names like `a.b`/`a_b`;
   rare, no privilege gain, and renaming would re-prompt everyone).
 
+### Third audit fixes (2026-10-23, branch `fix/audit-2026-10-23`, not merged)
+All 5 findings fixed, in the report's order. Nothing skipped. The decision rules moved into `Logic.swift`
+(no AppKit), checked by `tests/LogicTests.swift` via `tests/run.sh` (38 checks).
+1. Medium, the "rule already works" check. The old `sudo -n -l pmset ...` passed whenever any rule allows pmset
+   and any one entry has NOPASSWD, so with another no-password rule Wakey never installed its own rule and kept
+   saying "pmset itself failed". Now a failure counts as pmset's own only when Wakey's rule file (or the legacy
+   `/etc/sudoers.d/sleeptoggle`) exists and `sudo -n`'s stderr is not sudo refusing ("a password is required",
+   "not allowed to execute", or sudo rejecting a sudoers file: bad mode or owner, parse error). Otherwise it asks for the password as before. If sudo still refuses
+   right after a successful install, the alert now says another sudo rule overrides Wakey's. The rule install
+   itself (root-owned staging file, umask 0337, root:wheel 0440, `visudo -cf`, atomic `mv`) is unchanged.
+2. Low, VoiceOver presses. The queued-click time check and the right-click/Control check now apply only to a new
+   mouse-up on the button (not an event the button already saw, not one from another window such as the alert).
+   Any other press switches. Before, the stale event left behind by the password box or alert dropped the press.
+3. Low, switching to awake with the lid already shut (clamshell) now runs Lights Off right away
+   (`lightsOff()` still checks the setting and the real sleep state; the lid is read fresh).
+4. Low, polling. Reduced, not replaced: the state timer is 15 s (was 5 s) and no longer asks SMAppService
+   (that XPC call happens only when the menu opens or after a change). The lid check stays at 1 s, so lid
+   edges are caught as before, but in normal mode it reads the light levels only every 5th second. Timers have
+   a tolerance (3 s, 0.2 s). Not switched to an IOKit lid notification (`kIOPMMessageClamshellStateChange`):
+   it can't be tried without the Mac, and `checkLid()` would still need its timer to re-zero the keyboard and
+   sample levels. Trade-offs: a change made in Terminal shows on the icon within ~15 s instead of ~5 s; in
+   normal mode the saved light level lags by ~15 s instead of ~3 s; after an out-of-Wakey switch to awake,
+   Wakey reads levels at the normal-mode rate until its next 15 s state poll.
+5. Low (optional), dimmed screen saved. A screen reading is not kept when there's been no keyboard, mouse or
+   trackpad input for 30 s (`CGEventSource.secondsSinceLastEventType`) or the built-in display is asleep
+   (`CGDisplayIsAsleep`). Keyboard readings are unchanged (a keyboard light caught mid-fade by "turn off after
+   inactivity" can still be saved; that was not in the report). 30 s is a guess at "before the dim": display sleep
+   is at least 1 minute of idle; the Mac test plan checks it.
+
+How it was tested (Linux, no Mac): `tests/run.sh` with a Swift 5.10 toolchain, 38 passed / 0 failed;
+`swiftc -parse` on all four Swift files; a bug review of the diff (the code-review skill; the Agent tool for a
+separate helper wasn't available in that session), whose real findings were fixed (window check by window number,
+no "sudo:" prefix rule since sudo warnings still run pmset, settling counted in seconds, 30 s idle limit);
+and a type-check of `main.swift` + `Logic.swift` against stub
+AppKit/ServiceManagement modules (scratch only, not in the repo), clean. `Lid.swift`'s two additions
+(`userIdleSeconds()`, `ScreenLight.isAsleep`) were only parsed, not type-checked. Nothing ran on the Mac.
+
+## Mac test plan (audit 2026-10-23)
+Everything Claude runs is in the background: no `open` of the build-folder copy, no windows on Vinnie's screen.
+The hand tests (clicks, VoiceOver, the lid) are for Vinnie to do himself.
+
+1. Checks and a hidden build (Claude can run these, in the background):
+   ```bash
+   cd ~/path/to/wakey && git fetch origin && git checkout fix/audit-2026-10-23
+   tests/run.sh          # expect "38 passed, 0 failed"
+   ./build.sh            # compiles only, never launches; expect "Built build.noindex/Wakey.app"
+   ```
+   If the compile fails, `/Applications/Wakey.app` is untouched (build.sh compiles to a temp file first).
+2. The sudo check, without touching sudoers (read-only commands; nothing is written to `/etc/sudoers.d`):
+   ```bash
+   ls -l /etc/sudoers.d/                         # sleeptoggle-vinnie root:wheel 0440; Wakey only checks that it exists
+   sudo -k
+   sudo -n -l /usr/bin/true; echo "list exit $?"  # the old check's flaw: expect exit 0 (Wakey's NOPASSWD entry is enough)
+   sudo -n /usr/bin/true; echo "run exit $?"      # expect "sudo: a password is required", exit 1
+   v=$(pmset -g | awk '/SleepDisabled/{print $2}')
+   sudo -n /usr/bin/pmset -a disablesleep "$v"; echo "pmset exit $?"   # sets the current value again: exit 0, no output
+   ```
+   The `-l` line is the false positive the audit found: `sudo -n -l` says yes for a command sudo then refuses
+   (if it fails instead, this Mac's sudo doesn't show the flaw; the fix doesn't depend on it either way).
+   The `sudo -n /usr/bin/true` line's text must contain "password" (that's what `sudoRefused()` matches). If macOS prints
+   something else there, add it to `tests/LogicTests.swift` and `sudoRefused()`.
+   A real fresh install (no rule file) can only be tried on another account: optional, by Vinnie, with a spare
+   admin test user (log in as it, run Wakey from `/Applications`, click: expect one password box, then switching
+   with no box; then remove `/etc/sudoers.d/sleeptoggle-<testuser>` and delete the test user).
+3. Install (needs Vinnie's OK, it replaces his running copy; menu bar only, no windows):
+   ```bash
+   osascript -e 'quit app "Wakey"'; while pgrep -xq Wakey; do sleep 0.2; done
+   rm -rf /Applications/Wakey.app && cp -R build.noindex/Wakey.app /Applications/ && open -g /Applications/Wakey.app
+   ```
+   Check no privacy prompt appears (the idle-time read needs none; if an Input Monitoring prompt shows, report it).
+4. Hand tests (Vinnie):
+   - Left click switches; right-click and Control-click open the menu (checks the new click filter didn't break
+     real clicks).
+   - VoiceOver on: press the button (VO-Space) twice in a row; each press switches. Then cause the failure alert
+     (or cancel the password box on a test account), close it with Return, and press with VoiceOver again: it
+     switches. VO-Command-Space "Show menu" still opens the menu.
+   - Clamshell: lid shut with an external display, Wakey in normal mode, switch to awake from the external display:
+     the keyboard light goes off right away (and stays off). Open the lid: it comes back.
+   - Dim: with the lid open, leave the Mac idle until the screen dims, then close and reopen the lid in awake mode:
+     the screen comes back at the normal level, not the dim one.
+   - Polling: run `sudo pmset -a disablesleep 1` in Terminal; the icon turns orange within ~15 s. Switch back.
+     Optional: `top -l 2 -pid $(pgrep -x Wakey) -stats pid,cpu,idlew` to compare idle wakeups with the old build.
+
+## Deploy
+Merge `fix/audit-2026-10-23` into `main` after the Mac test plan passes, then install as in step 3 above.
+No sudoers change is needed: the existing `sleeptoggle-vinnie` rule keeps working.
+
 ## Next steps
+- Run the Mac test plan (audit 2026-10-23) above, then merge and install.
 - Still to hand-test (needs the lid physically shut): with awake mode on, close the lid, then untick and re-tick
   Lights Off When Lid Closes from the menu (via an external display or VoiceOver). Unticking should stop holding the
   keyboard light at 0; ticking should turn the lights off right away.
@@ -81,7 +171,8 @@ Repo: `vinnieg73/wakey` (private).
 - With an external display attached, closing the lid only turns the keyboard light off. The screens
   stay on (clamshell mode).
 - `disablesleep` survives quit and reboot. Switch it back off when done, or the Mac never sleeps.
-- `pmset -g` shows `SleepDisabled 1` when awake mode is on.
+- `pmset -g` shows `SleepDisabled 1` when awake mode is on. Wakey polls it every 15 s (a click and the menu read it fresh).
+- Don't go back to `sudo -n -l` to ask "does the rule work?": it passes whenever any entry has NOPASSWD.
 - Auto-brightness can relight the keyboard while the lid is closed; `checkLid()` re-zeros it.
 - The sudo rule file is now `/etc/sudoers.d/sleeptoggle-<username>`. Older installs may still have
   `/etc/sudoers.d/sleeptoggle`, which still works.

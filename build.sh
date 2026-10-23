@@ -12,7 +12,7 @@ APP="build.noindex/Wakey.app"
 # Compile first, so a failed compile doesn't wipe the existing app.
 TMPBIN="$(mktemp -t wakey-build)"
 trap 'rm -f "$TMPBIN"' EXIT
-swiftc -O -target "$(uname -m)-apple-macos13" main.swift Icons.swift Lid.swift -o "$TMPBIN"
+swiftc -O -target "$(uname -m)-apple-macos13" main.swift Icons.swift Lid.swift Logic.swift -o "$TMPBIN"
 rm -rf build.noindex && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp AppIcon.icns "$APP/Contents/Resources/"
 cp "$TMPBIN" "$APP/Contents/MacOS/Wakey"
