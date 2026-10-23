@@ -111,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     var recent: [(keyboard: Float?, screen: Float?)] = []   // last few readings while the lid is open
     var settling = 0                  // readings to skip right after the lid opens
+    var lidTick = 0                   // counts lid checks, for the slower level reads in normal mode
     var lightsOffOnLid: Bool {
         get { UserDefaults.standard.bool(forKey: "lightsOffOnLid") }
         set { UserDefaults.standard.set(newValue, forKey: "lightsOffOnLid") }
@@ -154,9 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         UserDefaults.standard.register(defaults: ["lightsOffOnLid": true])
 
         refresh()
-        // Pick up changes made elsewhere (for example in Terminal).
-        let t5 = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
-        RunLoop.main.add(t5, forMode: .common)   // .common: keeps running while the menu is open
+        // Pick up changes made elsewhere (for example in Terminal). A click and opening the menu read the
+        // real state anyway, so this only keeps the icon honest; every 15 s is enough.
+        let t15 = Timer(timeInterval: 15, repeats: true) { [weak self] _ in self?.refreshState() }
+        t15.tolerance = 3
+        RunLoop.main.add(t15, forMode: .common)   // .common: keeps running while the menu is open
 
         // Watch the lid. Starting with the lid already shut doesn't count as closing it.
         lidWasClosed = lidClosed()
@@ -169,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             save((keyboard.level, ScreenLight.level))
         }
         let t1 = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.checkLid() }
+        t1.tolerance = 0.2
         RunLoop.main.add(t1, forMode: .common)
         // Stops App Nap from delaying the lid checks (the token must stay alive).
         activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "Watching the lid")
@@ -187,8 +191,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func checkLid() {
         let closed = lidClosed()
+        lidTick += 1
         if closed, lightsAreOff, lightsOffOnLid, (keyboard.level ?? 0) > 0 { keyboard.set(0) }  // auto-brightness can relight it
-        if !closed { remember() }
+        if !closed, readLevelsNow(tick: lidTick, awake: awake) { remember() }   // every 5 s in normal mode
         guard closed != lidWasClosed else { return }
         lidWasClosed = closed
         if closed { recent.dropLast().forEach { save($0) } }  // keep older readings; the newest may be close-time dimming
@@ -249,7 +254,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    /// Everything, including the login item status (an XPC call), for the menu and after changes.
     func refresh() {
+        refreshState()
+        let login = SMAppService.mainApp.status
+        loginRow.title = login == .requiresApproval ? "Open at Login (needs approval)" : "Open at Login"
+        loginRow.state = login == .enabled ? .on : login == .requiresApproval ? .mixed : .off
+    }
+
+    /// The sleep state, the icon and the menu titles. The timer runs only this part.
+    func refreshState() {
         awake = sleepDisabled()
         let label = awake ? "Staying awake with lid closed" : "Normal sleep"
         let img = awake ? awakeIcon : sleepIcon
@@ -259,9 +273,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.toolTip = "\(label)\nClick to switch"
         stateRow.title = awake ? "Awake: lid can close" : "Normal sleep"
         toggleRow.title = awake ? "Allow Sleep Again" : "Keep Awake with Lid Closed"
-        let login = SMAppService.mainApp.status
-        loginRow.title = login == .requiresApproval ? "Open at Login (needs approval)" : "Open at Login"
-        loginRow.state = login == .enabled ? .on : login == .requiresApproval ? .mixed : .off
         lightsRow.state = lightsOffOnLid ? .on : .off
     }
 

@@ -43,3 +43,12 @@ func clickAction(mouseUp: Bool, otherWindow: Bool, seenBefore: Bool, right: Bool
 func lightsOffAfterSwitch(result: SwitchResult, nowAwake: Bool, lidShut: Bool) -> Bool {
     result == .done && nowAwake && lidShut
 }
+
+/// In normal mode the keyboard and screen levels are read every this many lid checks (seconds),
+/// not every second. Awake mode reads every second, since that's when Lights Off restores them.
+let normalModeReadEvery = 5
+
+/// Whether this lid check (one a second, counted by `tick`) also reads and remembers the light levels.
+func readLevelsNow(tick: Int, awake: Bool) -> Bool {
+    awake || tick % normalModeReadEvery == 0
+}

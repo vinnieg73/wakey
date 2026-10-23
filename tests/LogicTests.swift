@@ -14,6 +14,7 @@ enum LogicTests {
         sudoCheck()
         clicks()
         switchWithLidShut()
+        polling()
         print("\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
     }
@@ -69,5 +70,13 @@ enum LogicTests {
         check(!lightsOffAfterSwitch(result: .done, nowAwake: false, lidShut: true), "back to normal, lid shut -> nothing")
         check(!lightsOffAfterSwitch(result: .cancelled, nowAwake: true, lidShut: true), "password cancelled -> nothing")
         check(!lightsOffAfterSwitch(result: .pmsetFailed, nowAwake: true, lidShut: true), "switch failed -> nothing")
+    }
+
+    // Audit 2026-10-23 Low: less always-on work. Light levels are read every 5 s in normal mode.
+    static func polling() {
+        let normalReads = (1...60).filter { readLevelsNow(tick: $0, awake: false) }.count
+        let awakeReads = (1...60).filter { readLevelsNow(tick: $0, awake: true) }.count
+        check(normalReads == 12, "normal mode: 12 reads a minute (was 60), got \(normalReads)")
+        check(awakeReads == 60, "awake mode: still every second, got \(awakeReads)")
     }
 }
