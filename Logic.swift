@@ -9,7 +9,11 @@ func sudoRefused(_ stderr: String) -> Bool {
     let s = stderr.lowercased()
     return s.contains("password")                          // "sudo: a password is required"
         || s.contains("not allowed to execute")            // "Sorry, user x is not allowed to execute ..."
-        || s.contains("not in the sudoers")   // other "sudo: ..." lines can be warnings, with pmset still run
+        || s.contains("sudoers")              // a rule file sudo rejects: "/etc/sudoers.d/x is mode 0644, should be 0440",
+                                              // "no valid sudoers sources found", "parse error in /etc/sudoers.d/x"
+        || s.contains("syntax error")
+        || s.contains("policy plugin")        // "unable to initialize policy plugin"
+        // Other "sudo: ..." lines can be warnings ("unable to resolve host"), with pmset still run.
 }
 
 /// After `sudo -n pmset` failed: the failure is pmset's own only when Wakey's rule file (or the legacy one)

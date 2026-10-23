@@ -31,6 +31,13 @@ enum LogicTests {
         // Rule file there, but a later sudoers file overrides it: sudo still wants a password.
         check(failureNeedsRule(ruleFileExists: true, sudoStderr: needsPassword), "rule file, password -> install")
         check(failureNeedsRule(ruleFileExists: true, sudoStderr: notAllowed), "rule file, not allowed -> install")
+        // Rule file there but sudo rejects it (wrong mode or owner, parse error): reinstall, as before PR #3.
+        for bad in ["sudo: /etc/sudoers.d/sleeptoggle-vinnie is mode 0644, should be 0440\n",
+                    "sudo: /etc/sudoers.d/sleeptoggle-vinnie is owned by uid 501, should be 0\n",
+                    "sudo: parse error in /etc/sudoers.d/sleeptoggle-vinnie near line 1\nsudo: no valid sudoers sources found, quitting\nsudo: unable to initialize policy plugin\n",
+                    ">>> /etc/sudoers.d/sleeptoggle-vinnie: syntax error near line 1 <<<\n"] {
+            check(failureNeedsRule(ruleFileExists: true, sudoStderr: bad), "rule file rejected by sudo -> install: \(bad.prefix(50))")
+        }
         // A sudo warning that still runs pmset is not a refusal.
         check(!failureNeedsRule(ruleFileExists: true, sudoStderr: "sudo: unable to resolve host mac: nodename nor servname provided\n"), "rule file, sudo warning, pmset failed -> pmset failed")
         // Rule file there and sudo ran pmset: the failure is pmset's own.

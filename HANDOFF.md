@@ -64,12 +64,12 @@ Repo: `vinnieg73/wakey` (private).
 
 ### Third audit fixes (2026-10-23, branch `fix/audit-2026-10-23`, not merged)
 All 5 findings fixed, in the report's order. Nothing skipped. The decision rules moved into `Logic.swift`
-(no AppKit), checked by `tests/LogicTests.swift` via `tests/run.sh` (34 checks).
+(no AppKit), checked by `tests/LogicTests.swift` via `tests/run.sh` (38 checks).
 1. Medium, the "rule already works" check. The old `sudo -n -l pmset ...` passed whenever any rule allows pmset
    and any one entry has NOPASSWD, so with another no-password rule Wakey never installed its own rule and kept
    saying "pmset itself failed". Now a failure counts as pmset's own only when Wakey's rule file (or the legacy
    `/etc/sudoers.d/sleeptoggle`) exists and `sudo -n`'s stderr is not sudo refusing ("a password is required",
-   "not allowed to execute", a `sudo:` line). Otherwise it asks for the password as before. If sudo still refuses
+   "not allowed to execute", or sudo rejecting a sudoers file: bad mode or owner, parse error). Otherwise it asks for the password as before. If sudo still refuses
    right after a successful install, the alert now says another sudo rule overrides Wakey's. The rule install
    itself (root-owned staging file, umask 0337, root:wheel 0440, `visudo -cf`, atomic `mv`) is unchanged.
 2. Low, VoiceOver presses. The queued-click time check and the right-click/Control check now apply only to a new
@@ -91,7 +91,7 @@ All 5 findings fixed, in the report's order. Nothing skipped. The decision rules
    inactivity" can still be saved; that was not in the report). 30 s is a guess at "before the dim": display sleep
    is at least 1 minute of idle; the Mac test plan checks it.
 
-How it was tested (Linux, no Mac): `tests/run.sh` with a Swift 5.10 toolchain, 34 passed / 0 failed;
+How it was tested (Linux, no Mac): `tests/run.sh` with a Swift 5.10 toolchain, 38 passed / 0 failed;
 `swiftc -parse` on all four Swift files; a bug review of the diff (the code-review skill; the Agent tool for a
 separate helper wasn't available in that session), whose real findings were fixed (window check by window number,
 no "sudo:" prefix rule since sudo warnings still run pmset, settling counted in seconds, 30 s idle limit);
@@ -106,7 +106,7 @@ The hand tests (clicks, VoiceOver, the lid) are for Vinnie to do himself.
 1. Checks and a hidden build (Claude can run these, in the background):
    ```bash
    cd ~/path/to/wakey && git fetch origin && git checkout fix/audit-2026-10-23
-   tests/run.sh          # expect "34 passed, 0 failed"
+   tests/run.sh          # expect "38 passed, 0 failed"
    ./build.sh            # compiles only, never launches; expect "Built build.noindex/Wakey.app"
    ```
    If the compile fails, `/Applications/Wakey.app` is untouched (build.sh compiles to a temp file first).
