@@ -41,6 +41,8 @@ open /Applications/Wakey.app
 ./make-icon.sh                               # only if the face changes: regenerates AppIcon.icns
 ```
 
+`tests/run.sh` builds and runs the checks for the decision rules in `Logic.swift` (no app launch).
+
 ## Undo
 
 Turn sleep back on first, or the Mac will never sleep.
