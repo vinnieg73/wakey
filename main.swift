@@ -102,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var awake = false
     var busy = false                  // a switch is in progress
     var ignoreClicksUntil: TimeInterval = 0   // clicks queued before this time (system uptime) are dropped
+    var lastClickEvent: (type: NSEvent.EventType, time: TimeInterval)?   // the event the button's last press saw
 
     let keyboard = KeyboardLight()
     var lidWasClosed = false
@@ -265,12 +266,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func clicked() {
+        // A VoiceOver press has no event of its own: currentEvent is whatever the app handled last
+        // (an old click, the Return that closed an alert). Only a new mouse-up on the button is a click.
         let e = NSApp.currentEvent
-        if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
-            showMenu()
-        } else {
-            if let t = e?.timestamp, t < ignoreClicksUntil { return }   // queued during the password box
-            toggle()
+        let seen = e.map { lastClickEvent?.type == $0.type && lastClickEvent?.time == $0.timestamp } ?? false
+        if let e { lastClickEvent = (e.type, e.timestamp) }
+        let action = clickAction(
+            mouseUp: e?.type == .leftMouseUp || e?.type == .rightMouseUp,
+            otherWindow: e?.window != nil && e?.window !== item.button?.window,
+            seenBefore: seen,
+            right: e?.type == .rightMouseUp,
+            control: e?.modifierFlags.contains(.control) == true,
+            time: e?.timestamp ?? 0,
+            ignoreUntil: ignoreClicksUntil)   // clicks queued during the password box or the alert are dropped
+        switch action {
+        case .menu: showMenu()
+        case .toggle: toggle()
+        case .ignore: break
         }
     }
 

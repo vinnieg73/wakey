@@ -12,6 +12,7 @@ enum LogicTests {
 
     static func main() {
         sudoCheck()
+        clicks()
         print("\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
     }
@@ -36,5 +37,27 @@ enum LogicTests {
         check(resultAfterInstall(sudoStderr: notAllowed) == .ruleOverridden, "after install, not allowed -> overridden")
         check(resultAfterInstall(sudoStderr: "") == .pmsetFailed, "after install, silent -> pmset failed")
         check(!sudoRefused("SleepDisabled\t\t1\n"), "pmset output is not a sudo refusal")
+    }
+
+    // Audit 2026-10-23 Low: a VoiceOver press after the password box or an alert must still switch.
+    static func clicks() {
+        func act(mouseUp: Bool = true, otherWindow: Bool = false, seen: Bool = false, right: Bool = false,
+                 control: Bool = false, time: TimeInterval = 100, ignoreUntil: TimeInterval = 50) -> ClickAction {
+            clickAction(mouseUp: mouseUp, otherWindow: otherWindow, seenBefore: seen, right: right,
+                        control: control, time: time, ignoreUntil: ignoreUntil)
+        }
+        // Real clicks on the button.
+        check(act() == .toggle, "fresh left click switches")
+        check(act(right: true) == .menu, "fresh right click opens the menu")
+        check(act(control: true) == .menu, "fresh Control-click opens the menu")
+        check(act(time: 40) == .ignore, "click queued behind the password box is dropped")
+        check(act(right: true, time: 40) == .menu, "queued right click still opens the menu (as before)")
+        // VoiceOver presses: the current event is stale.
+        check(act(seen: true, time: 40) == .toggle, "stale old click (seen before) -> VoiceOver press switches")
+        check(act(seen: true, right: true) == .toggle, "stale right click -> switches, not the menu")
+        check(act(mouseUp: false, time: 40) == .toggle, "stale Return key from the alert -> switches")
+        check(act(mouseUp: false, control: true) == .toggle, "stale Control-key event -> switches, not the menu")
+        check(act(otherWindow: true, time: 40) == .toggle, "stale click on the alert's OK button -> switches")
+        check(act(mouseUp: false, time: 0) == .toggle, "no current event at all -> switches")
     }
 }

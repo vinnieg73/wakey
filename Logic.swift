@@ -23,3 +23,17 @@ func failureNeedsRule(ruleFileExists: Bool, sudoStderr: String) -> Bool {
 func resultAfterInstall(sudoStderr: String) -> SwitchResult {
     sudoRefused(sudoStderr) ? .ruleOverridden : .pmsetFailed   // refused: a later sudoers rule wins over Wakey's
 }
+
+enum ClickAction: Equatable { case toggle, menu, ignore }
+
+/// What a press on the menu bar button does. `mouseUp`: the app's current event is a mouse-up.
+/// `otherWindow`: that event belongs to another window (an alert's button). `seenBefore`: the same event
+/// already reached the button once. An accessibility (VoiceOver) press has no event of its own and
+/// leaves the last handled event in place, so only a new mouse-up on the button is treated as a click:
+/// everything else switches, with no queued-click or Control check.
+func clickAction(mouseUp: Bool, otherWindow: Bool, seenBefore: Bool, right: Bool, control: Bool,
+                 time: TimeInterval, ignoreUntil: TimeInterval) -> ClickAction {
+    guard mouseUp, !otherWindow, !seenBefore else { return .toggle }
+    if right || control { return .menu }
+    return time < ignoreUntil ? .ignore : .toggle   // queued behind the password box or the alert
+}
