@@ -220,16 +220,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !external { displaysOffNow() }
     }
 
-    /// Saves the keyboard and screen levels from 3 seconds ago, so dimming while the lid
-    /// is closing (or just after it opens) never gets saved as the level to come back to.
+    /// Saves the keyboard and screen levels from 3 readings ago (3 s in awake mode, 15 s in normal mode),
+    /// so dimming while the lid is closing (or just after it opens) never gets saved as the level to come back to.
     func remember() {
         if settling > 0 { settling -= 1; return }
-        recent.append((keyboard.level, ScreenLight.level))
+        // A screen dimmed before display sleep (or asleep) must not become the level to come back to.
+        let screenOK = screenReadingUsable(idleSeconds: userIdleSeconds(), displayAsleep: ScreenLight.isAsleep)
+        recent.append((keyboard.level, screenOK ? ScreenLight.level : nil))
         guard recent.count > 3 else { return }
         save(recent.removeFirst())
     }
 
-    /// Saves one reading. Keyboard 0 (idle-off) and a screen reading of 0 (display off) are skipped.
+    /// Saves one reading. Keyboard 0 (idle-off), a screen reading of 0 (display off) and a missing
+    /// reading (nil, also used for a screen dimmed or asleep) are skipped.
     func save(_ r: (keyboard: Float?, screen: Float?)) {
         if let k = r.keyboard, k > 0.02 { UserDefaults.standard.set(k, forKey: "lastKeyboardLevel") }
         if let s = r.screen, s > 0.001 { UserDefaults.standard.set(s, forKey: "lastScreenLevel") }

@@ -52,3 +52,12 @@ let normalModeReadEvery = 5
 func readLevelsNow(tick: Int, awake: Bool) -> Bool {
     awake || tick % normalModeReadEvery == 0
 }
+
+/// macOS dims the screen only after a stretch with no input (before display sleep), and nobody changes
+/// the brightness without input, so a screen reading taken after this much idle time is not kept.
+let idleBeforeDim: Double = 10
+
+/// Whether a screen brightness reading is worth keeping as the level to come back to.
+func screenReadingUsable(idleSeconds: Double, displayAsleep: Bool) -> Bool {
+    !displayAsleep && idleSeconds < idleBeforeDim
+}

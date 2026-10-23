@@ -15,6 +15,7 @@ enum LogicTests {
         clicks()
         switchWithLidShut()
         polling()
+        dimmedScreen()
         print("\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
     }
@@ -78,5 +79,14 @@ enum LogicTests {
         let awakeReads = (1...60).filter { readLevelsNow(tick: $0, awake: true) }.count
         check(normalReads == 12, "normal mode: 12 reads a minute (was 60), got \(normalReads)")
         check(awakeReads == 60, "awake mode: still every second, got \(awakeReads)")
+    }
+
+    // Audit 2026-10-23 Low: a screen dimmed before display sleep, or asleep, is not saved.
+    static func dimmedScreen() {
+        check(screenReadingUsable(idleSeconds: 0.5, displayAsleep: false), "in use -> kept")
+        check(screenReadingUsable(idleSeconds: 9.9, displayAsleep: false), "idle under 10 s -> kept")
+        check(!screenReadingUsable(idleSeconds: 10, displayAsleep: false), "idle 10 s -> dropped")
+        check(!screenReadingUsable(idleSeconds: 95, displayAsleep: false), "idle dim before display sleep -> dropped")
+        check(!screenReadingUsable(idleSeconds: 1, displayAsleep: true), "display asleep -> dropped")
     }
 }

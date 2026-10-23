@@ -11,6 +11,11 @@ func lidClosed() -> Bool {
     return (v?.takeRetainedValue() as? Bool) ?? false
 }
 
+/// Seconds since the last keyboard, mouse or trackpad input (no permission needed).
+func userIdleSeconds() -> Double {
+    CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+}
+
 /// Turns the displays off right away, without sleeping the Mac.
 func displaysOffNow() {
     let p = Process()
@@ -75,6 +80,12 @@ enum ScreenLight {
         guard let get = getFn, let id = builtIn else { return nil }
         var v: Float = 0
         return get(id, &v) == 0 ? v : nil
+    }
+
+    /// True while the built-in screen is asleep.
+    static var isAsleep: Bool {
+        guard let id = builtIn else { return false }
+        return CGDisplayIsAsleep(id) != 0
     }
 
     static func set(_ v: Float) {
