@@ -25,6 +25,14 @@ that password once and installs a rule file, `/etc/sudoers.d/sleeptoggle-<userna
 The rule lets your user run only `pmset -a disablesleep 0|1` without a password.
 Older installs may have `/etc/sudoers.d/sleeptoggle` instead. It still works.
 The setting survives quitting and restarts, so switch sleep back on when you're done.
+Switch to blue before quitting: quitting while orange leaves the Mac unable to sleep until you switch back.
+
+## When it's off
+
+In normal mode (blue) the Mac sleeps exactly like stock macOS. Wakey changes no other power setting, runs no
+`caffeinate`, and holds no power assertions. Check with `pmset -g` (`SleepDisabled 0`) and
+`pmset -g assertions` (no Wakey entry). Tested 2026-10-23: lid close gave "Entering Sleep state due to
+'Clamshell Sleep'" in `pmset -g log`.
 
 ## Build and install
 

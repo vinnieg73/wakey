@@ -10,7 +10,9 @@ installed `sleeptoggle-vinnie` root:wheel 0440, no staging file left), and a lat
 Also tested: the VoiceOver "Show menu" action opens the menu without switching; Open at Login from a
 build-folder copy refuses to turn on (alert shown, nothing registered). Only the lid-shut Lights Off toggle is left.
 A third audit (2026-10-23, report `tool-reviews/2026-10-23/wakey.md`: 0 High, 1 Medium, 4 Low) is fixed on branch
-`fix/audit-2026-10-23`. Not merged, not built or installed yet: see "Mac test plan (audit 2026-10-23)".
+`fix/audit-2026-10-23`, merged into `main` (PR #3, 2026-10-22 23:21). The installed `/Applications/Wakey.app`
+binary matches `build.noindex/` (same SHA-1, built 23:23 after the merge). The hand tests in
+"Mac test plan (audit 2026-10-23)" are not recorded as done.
 Repo: `vinnieg73/wakey` (private).
 
 ## Done
@@ -99,6 +101,26 @@ and a type-check of `main.swift` + `Logic.swift` against stub
 AppKit/ServiceManagement modules (scratch only, not in the repo), clean. `Lid.swift`'s two additions
 (`userIdleSeconds()`, `ScreenLight.isAsleep`) were only parsed, not type-checked. Nothing ran on the Mac.
 
+## Off-state check (2026-10-23, read-only, nothing changed)
+Question: with Wakey off, does the Mac sleep like stock macOS?
+- Code: the only power setting Wakey ever writes is `pmset -a disablesleep 0|1`. `displaysleepnow` is a one-shot
+  (screen off now), not a setting. It never touches `sleep`, `displaysleep`, `disksleep` etc., never runs
+  `caffeinate`, and never creates an IOPM assertion. Its `beginActivity(.userInitiatedAllowingIdleSystemSleep)`
+  (App Nap opt-out) allows sleep and does not show in `pmset -g assertions`.
+- Live, Wakey running in normal mode: `SleepDisabled 0`; no Wakey entry in `pmset -g assertions`; no
+  `caffeinate` running; Claude Dashboard running but holding no assertion. Wakey leaves nothing behind when off.
+- Gap: quitting Wakey while awake mode is on leaves `SleepDisabled 1` (documented, `applicationWillTerminate`
+  only restores lights). Switch to normal before quitting. Changing that is Vinnie's call.
+- Not Wakey: AC Power has `sleep 0` and `displaysleep 0` (on the charger: never idle-sleep, never turn the screen
+  off); battery has `displaysleep 30`. No version of Wakey in git history ever set these, and its sudo rule only
+  allows `disablesleep`. They match System Settings > Lock Screen "Turn display off on power adapter when inactive:
+  Never" and Battery > Options "Prevent automatic sleeping on power adapter when the display is off". They don't
+  stop lid-close sleep. The Claude app also holds a NoIdleSleepAssertion
+  ("sleep prevented by Claude"), which blocks idle sleep only.
+- Lid test passed (2026-10-23, by Vinnie): blue face, no external display, on AC. Log: 14:30:32 "Entering Sleep
+  state due to 'Clamshell Sleep'", a 10 s DarkWake (normal Wi-Fi/maintenance wake), back to sleep 14:30:44,
+  "Wake from Deep Idle ... lid" at 14:32:41. `SleepDisabled` still 0 after. Off mode sleeps like stock macOS.
+
 ## Mac test plan (audit 2026-10-23)
 Everything Claude runs is in the background: no `open` of the build-folder copy, no windows on Vinnie's screen.
 The hand tests (clicks, VoiceOver, the lid) are for Vinnie to do himself.
@@ -150,7 +172,7 @@ Merge `fix/audit-2026-10-23` into `main` after the Mac test plan passes, then in
 No sudoers change is needed: the existing `sleeptoggle-vinnie` rule keeps working.
 
 ## Next steps
-- Run the Mac test plan (audit 2026-10-23) above, then merge and install.
+- Hand tests in the Mac test plan (audit 2026-10-23); the merge and install are done.
 - Still to hand-test (needs the lid physically shut): with awake mode on, close the lid, then untick and re-tick
   Lights Off When Lid Closes from the menu (via an external display or VoiceOver). Unticking should stop holding the
   keyboard light at 0; ticking should turn the lights off right away.
