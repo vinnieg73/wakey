@@ -281,15 +281,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func clicked() {
         // A VoiceOver press has no event of its own: currentEvent is whatever the app handled last
-        // (an old click, the Return that closed an alert). Only a new mouse event on the button is a click.
+        // (an old click, the Return that closed an alert). Only a new mouse-up on the button is a click.
         let e = NSApp.currentEvent
         let seen = e.map { lastClickEvent?.type == $0.type && lastClickEvent?.time == $0.timestamp } ?? false
         if let e { lastClickEvent = (e.type, e.timestamp) }
         let action = clickAction(
-            mouse: [.leftMouseUp, .rightMouseUp, .leftMouseDown, .rightMouseDown].contains(e?.type),
+            mouseUp: e?.type == .leftMouseUp || e?.type == .rightMouseUp,
             otherWindow: e?.window != nil && e?.window !== item.button?.window,
             seenBefore: seen,
-            right: e?.type == .rightMouseUp || e?.type == .rightMouseDown,
+            right: e?.type == .rightMouseUp,
             control: e?.modifierFlags.contains(.control) == true,
             time: e?.timestamp ?? 0,
             ignoreUntil: ignoreClicksUntil)   // clicks queued during the password box or the alert are dropped

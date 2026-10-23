@@ -73,7 +73,7 @@ All 5 findings fixed, in the report's order. Nothing skipped. The decision rules
    right after a successful install, the alert now says another sudo rule overrides Wakey's. The rule install
    itself (root-owned staging file, umask 0337, root:wheel 0440, `visudo -cf`, atomic `mv`) is unchanged.
 2. Low, VoiceOver presses. The queued-click time check and the right-click/Control check now apply only to a new
-   mouse event on the button (not an event the button already saw, not one from another window such as the alert).
+   mouse-up on the button (not an event the button already saw, not one from another window such as the alert).
    Any other press switches. Before, the stale event left behind by the password box or alert dropped the press.
 3. Low, switching to awake with the lid already shut (clamshell) now runs Lights Off right away
    (`lightsOff()` still checks the setting and the real sleep state; the lid is read fresh).
