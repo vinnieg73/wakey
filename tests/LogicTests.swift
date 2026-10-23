@@ -44,9 +44,9 @@ enum LogicTests {
 
     // Audit 2026-10-23 Low: a VoiceOver press after the password box or an alert must still switch.
     static func clicks() {
-        func act(mouseUp: Bool = true, otherWindow: Bool = false, seen: Bool = false, right: Bool = false,
+        func act(mouse: Bool = true, otherWindow: Bool = false, seen: Bool = false, right: Bool = false,
                  control: Bool = false, time: TimeInterval = 100, ignoreUntil: TimeInterval = 50) -> ClickAction {
-            clickAction(mouseUp: mouseUp, otherWindow: otherWindow, seenBefore: seen, right: right,
+            clickAction(mouse: mouse, otherWindow: otherWindow, seenBefore: seen, right: right,
                         control: control, time: time, ignoreUntil: ignoreUntil)
         }
         // Real clicks on the button.
@@ -58,10 +58,10 @@ enum LogicTests {
         // VoiceOver presses: the current event is stale.
         check(act(seen: true, time: 40) == .toggle, "stale old click (seen before) -> VoiceOver press switches")
         check(act(seen: true, right: true) == .toggle, "stale right click -> switches, not the menu")
-        check(act(mouseUp: false, time: 40) == .toggle, "stale Return key from the alert -> switches")
-        check(act(mouseUp: false, control: true) == .toggle, "stale Control-key event -> switches, not the menu")
+        check(act(mouse: false, time: 40) == .toggle, "stale Return key from the alert -> switches")
+        check(act(mouse: false, control: true) == .toggle, "stale Control-key event -> switches, not the menu")
         check(act(otherWindow: true, time: 40) == .toggle, "stale click on the alert's OK button -> switches")
-        check(act(mouseUp: false, time: 0) == .toggle, "no current event at all -> switches")
+        check(act(mouse: false, time: 0) == .toggle, "no current event at all -> switches")
     }
 
     // Audit 2026-10-23 Low: switching to awake with the lid already shut applies Lights Off.
