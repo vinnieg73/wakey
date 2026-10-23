@@ -37,3 +37,9 @@ func clickAction(mouseUp: Bool, otherWindow: Bool, seenBefore: Bool, right: Bool
     if right || control { return .menu }
     return time < ignoreUntil ? .ignore : .toggle   // queued behind the password box or the alert
 }
+
+/// After a click: turn the lights off right away when awake mode just went on with the lid already
+/// shut (clamshell mode), since no lid-close is coming to do it. lightsOff() still checks the setting.
+func lightsOffAfterSwitch(result: SwitchResult, nowAwake: Bool, lidShut: Bool) -> Bool {
+    result == .done && nowAwake && lidShut
+}

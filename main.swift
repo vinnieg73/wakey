@@ -337,7 +337,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard !busy else { return }
         busy = true
         defer { busy = false }   // stays set while the alert is open, so clicks during it can't start another switch
-        let result = setSleepDisabled(!sleepDisabled())   // read the real state, not the cached one
+        let on = !sleepDisabled()   // read the real state, not the cached one
+        let result = setSleepDisabled(on)
         if askedForPassword { ignoreClicksUntil = ProcessInfo.processInfo.systemUptime }
         if result == .failed || result == .pmsetFailed || result == .ruleOverridden {   // cancelling the password prompt stays silent and leaves it unchanged
             NSApp.activate(ignoringOtherApps: true)
@@ -354,6 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             a.runModal()
             ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
         }
+        if lightsOffAfterSwitch(result: result, nowAwake: on, lidShut: lidClosed()) { lightsOff() }
         refresh()
     }
 }

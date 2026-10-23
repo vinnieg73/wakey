@@ -13,6 +13,7 @@ enum LogicTests {
     static func main() {
         sudoCheck()
         clicks()
+        switchWithLidShut()
         print("\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
     }
@@ -59,5 +60,14 @@ enum LogicTests {
         check(act(mouseUp: false, control: true) == .toggle, "stale Control-key event -> switches, not the menu")
         check(act(otherWindow: true, time: 40) == .toggle, "stale click on the alert's OK button -> switches")
         check(act(mouseUp: false, time: 0) == .toggle, "no current event at all -> switches")
+    }
+
+    // Audit 2026-10-23 Low: switching to awake with the lid already shut applies Lights Off.
+    static func switchWithLidShut() {
+        check(lightsOffAfterSwitch(result: .done, nowAwake: true, lidShut: true), "awake on, lid shut -> lights off")
+        check(!lightsOffAfterSwitch(result: .done, nowAwake: true, lidShut: false), "awake on, lid open -> nothing")
+        check(!lightsOffAfterSwitch(result: .done, nowAwake: false, lidShut: true), "back to normal, lid shut -> nothing")
+        check(!lightsOffAfterSwitch(result: .cancelled, nowAwake: true, lidShut: true), "password cancelled -> nothing")
+        check(!lightsOffAfterSwitch(result: .pmsetFailed, nowAwake: true, lidShut: true), "switch failed -> nothing")
     }
 }
