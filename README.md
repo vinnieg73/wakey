@@ -51,6 +51,21 @@ open /Applications/Wakey.app
 
 `tests/run.sh` builds and runs the checks for the decision rules in `Logic.swift` (no app launch).
 
+## Self-check
+
+Run before every commit, on the Mac (from any folder):
+
+```bash
+./selfcheck.sh
+```
+
+It runs the logic tests (`tests/run.sh`, the decision rules in `Logic.swift`) and then `./build.sh`, which
+compiles the app into `build.noindex/Wakey.app` without launching it (a failed compile leaves the old build and
+`/Applications/Wakey.app` alone). One `ok` / `FAIL` line per step, then **PASS** (exit 0) or **FAIL (n)** (exit 1).
+Both steps need `swiftc`, so it needs a Mac with Xcode or the Command Line Tools: anywhere else it says
+"needs a Mac" and exits 2, which is never a pass. Installing the new build is still the manual step in
+"Build and install".
+
 ## Undo
 
 Turn sleep back on first, or the Mac will never sleep.
