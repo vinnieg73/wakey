@@ -121,6 +121,16 @@ Question: with Wakey off, does the Mac sleep like stock macOS?
   state due to 'Clamshell Sleep'", a 10 s DarkWake (normal Wi-Fi/maintenance wake), back to sleep 14:30:44,
   "Wake from Deep Idle ... lid" at 14:32:41. `SleepDisabled` still 0 after. Off mode sleeps like stock macOS.
 
+## Check after AlDente (2026-10-25, read-only)
+Vinnie installed AlDente, then removed it (`brew uninstall --zap --cask` while it was open); macOS's own 80% limit is on.
+- Wakey unaffected: binary unchanged (same SHA-1 as 2026-10-23), signature valid, running. Rule file
+  `sleeptoggle-vinnie` unchanged (root:wheel 0440, same date). `sudo -n pmset -a disablesleep <current>` exit 0
+  while plain `sudo -n` still needs a password, so the rule works. Awake mode was on (`SleepDisabled 1`).
+- AlDente gone: no process, helper, launch daemon or agent, or power assertion. Only leftover is
+  `~/Library/Preferences/com.apphousekitchen.aldente-pro.plist` (settings only; `hasBeenActivated` false).
+- Battery 98%, "AC attached; not charging" is expected with an 80% limit. If it still won't charge below 80%,
+  suspect a stuck AlDente charge setting; a restart clears it.
+
 ## Mac test plan (audit 2026-10-23)
 Everything Claude runs is in the background: no `open` of the build-folder copy, no windows on Vinnie's screen.
 The hand tests (clicks, VoiceOver, the lid) are for Vinnie to do himself.
