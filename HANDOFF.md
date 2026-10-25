@@ -14,6 +14,7 @@ A third audit (2026-10-23, report `tool-reviews/2026-10-23/wakey.md`: 0 High, 1 
 binary matches `build.noindex/` (same SHA-1, built 23:23 after the merge). The hand tests in
 "Mac test plan (audit 2026-10-23)" are not recorded as done.
 Repo: `vinnieg73/wakey` (private).
+2026-10-25: one self-check command, `./selfcheck.sh` (branch `feat/selfcheck`): `tests/run.sh` then `./build.sh` (compile into build.noindex, no launch); PASS / FAIL (n), exit 0/1; without swiftc it prints "needs a Mac" and exits 2. Written in the cloud (no Swift there), so it has NOT been run on the Mac yet: first run expected "38 passed, 0 failed" and "Built build.noindex/Wakey.app", then PASS. See README "Self-check".
 
 ## Done
 - Menu bar face toggles `pmset -a disablesleep 0|1` (orange/smiling = awake, blue/sleepy = normal sleep).
@@ -182,6 +183,7 @@ Merge `fix/audit-2026-10-23` into `main` after the Mac test plan passes, then in
 No sudoers change is needed: the existing `sleeptoggle-vinnie` rule keeps working.
 
 ## Next steps
+- 2026-10-25: run `./selfcheck.sh` once on the Mac (branch `feat/selfcheck`) to confirm it says PASS; after that, run it before every commit.
 - Hand tests in the Mac test plan (audit 2026-10-23); the merge and install are done.
 - Still to hand-test (needs the lid physically shut): with awake mode on, close the lid, then untick and re-tick
   Lights Off When Lid Closes from the menu (via an external display or VoiceOver). Unticking should stop holding the
