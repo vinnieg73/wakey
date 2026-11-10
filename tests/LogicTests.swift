@@ -16,6 +16,7 @@ enum LogicTests {
         switchWithLidShut()
         polling()
         dimmedScreen()
+        quitting()
         print("\(passes) passed, \(failures) failed")
         exit(failures == 0 ? 0 : 1)
     }
@@ -96,5 +97,15 @@ enum LogicTests {
         check(!screenReadingUsable(idleSeconds: 30, displayAsleep: false), "idle 30 s -> dropped")
         check(!screenReadingUsable(idleSeconds: 95, displayAsleep: false), "idle dim before display sleep -> dropped")
         check(!screenReadingUsable(idleSeconds: 1, displayAsleep: true), "display asleep -> dropped")
+    }
+
+    // Version 1.1: the menu's Quit switches back to normal sleep first, and warns if it couldn't.
+    static func quitting() {
+        check(quitTitle(awake: true) == "Quit and Allow Sleep Again", "orange: the Quit row says it allows sleep again")
+        check(quitTitle(awake: false) == "Quit Wakey", "blue: plain Quit")
+        check(!quitNeedsWarning(.done), "switched back -> quit, no warning")
+        for r in [SwitchResult.cancelled, .failed, .pmsetFailed, .ruleOverridden] {
+            check(quitNeedsWarning(r), "couldn't switch back (\(r)) -> warn before quitting")
+        }
     }
 }

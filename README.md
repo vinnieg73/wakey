@@ -8,7 +8,8 @@ A menu bar switch that keeps your Mac awake, even with the lid closed.
   - the switch (Keep Awake with Lid Closed / Allow Sleep Again),
   - **Lights Off When Lid Closes** (on by default),
   - **Open at Login**,
-  - **Quit Wakey**.
+  - **Wakey Help** (what everything does, and the version),
+  - **Quit Wakey**. While orange it reads **Quit and Allow Sleep Again**: it switches back to normal sleep, then quits.
 
 ## Lights Off When Lid Closes
 
@@ -24,8 +25,10 @@ It uses `pmset -a disablesleep`. Switching needs an administrator account. The f
 that password once and installs a rule file, `/etc/sudoers.d/sleeptoggle-<username>` (one file per user).
 The rule lets your user run only `pmset -a disablesleep 0|1` without a password.
 Older installs may have `/etc/sudoers.d/sleeptoggle` instead. It still works.
-The setting survives quitting and restarts, so switch sleep back on when you're done.
-Switch to blue before quitting: quitting while orange leaves the Mac unable to sleep until you switch back.
+The setting survives restarts. Quitting from the menu switches back to normal sleep first, so the Mac is never
+left unable to sleep with no icon to switch it back. If that switch fails, Wakey asks before quitting.
+A restart, a logout, or quitting Wakey another way (`osascript -e 'quit app "Wakey"'`, as the install steps do)
+keeps the setting.
 
 ## When it's off
 
@@ -40,16 +43,19 @@ Quit Wakey first and remove the old app, then copy the new one. Copying over the
 it running old code, or get it killed.
 
 ```bash
+./make-icon.sh                               # only if the face changed: regenerates AppIcon.icns (run it before build.sh)
 ./build.sh                                   # builds build.noindex/Wakey.app
 osascript -e 'quit app "Wakey"'
 while pgrep -xq Wakey; do sleep 0.2; done    # wait until the old copy has exited
 rm -rf /Applications/Wakey.app
 cp -R build.noindex/Wakey.app /Applications/
-open /Applications/Wakey.app
-./make-icon.sh                               # only if the face changes: regenerates AppIcon.icns
+open -g /Applications/Wakey.app              # -g: start it in the background
 ```
 
-`tests/run.sh` builds and runs the checks for the decision rules in `Logic.swift` (no app launch).
+## Version
+
+Version 1.1. The number is set once, at the top of `build.sh` (`VERSION`); the build number is worked out
+from it. Each release bumps the second number and gets a git tag (`v1.1`). Wakey Help shows it.
 
 ## Self-check
 

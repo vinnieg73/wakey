@@ -9,10 +9,14 @@ while [ -L "$SRC" ]; do
 done
 cd "$(dirname "$SRC")"
 APP="build.noindex/Wakey.app"
+# The version: two numbers. Bump it for each release and tag the commit v<version> (1.1 -> tag v1.1).
+# The build number is worked out from it: major x 100 + minor, so 1.1 = 101 and 2.0 = 200.
+VERSION="1.1"
+BUILD=$(( 10#${VERSION%%.*} * 100 + 10#${VERSION#*.} ))
 # Compile first, so a failed compile doesn't wipe the existing app.
 TMPBIN="$(mktemp -t wakey-build)"
 trap 'rm -f "$TMPBIN"' EXIT
-swiftc -O -target "$(uname -m)-apple-macos13" main.swift Icons.swift Lid.swift Logic.swift -o "$TMPBIN"
+swiftc -O -target "$(uname -m)-apple-macos13" main.swift Icons.swift Lid.swift Logic.swift Help.swift -o "$TMPBIN"
 rm -rf build.noindex && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp AppIcon.icns "$APP/Contents/Resources/"
 cp "$TMPBIN" "$APP/Contents/MacOS/Wakey"
@@ -25,7 +29,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>Wakey</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
 </dict></plist>

@@ -47,6 +47,14 @@ func lightsOffAfterSwitch(result: SwitchResult, nowAwake: Bool, lidShut: Bool) -
     result == .done && nowAwake && lidShut
 }
 
+/// The menu's Quit row. Quitting from the menu while awake mode is on switches back to normal sleep
+/// first (quitFromMenu in main.swift), and the row says so.
+func quitTitle(awake: Bool) -> String { awake ? "Quit and Allow Sleep Again" : "Quit Wakey" }
+
+/// After the menu's Quit tried to switch sleep back on: anything but a clean switch gets a warning before
+/// quitting, since the Mac would stay unable to sleep with no icon left to switch it back.
+func quitNeedsWarning(_ result: SwitchResult) -> Bool { result != .done }
+
 /// In normal mode the keyboard and screen levels are read every this many lid checks (seconds),
 /// not every second. Awake mode reads every second, since that's when Lights Off restores them.
 let normalModeReadEvery = 5

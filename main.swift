@@ -98,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let toggleRow = NSMenuItem(title: "", action: #selector(toggle), keyEquivalent: "")
     let loginRow = NSMenuItem(title: "Open at Login", action: #selector(toggleLogin), keyEquivalent: "")
     let lightsRow = NSMenuItem(title: "Lights Off When Lid Closes", action: #selector(toggleLights), keyEquivalent: "")
+    let helpRow = NSMenuItem(title: "Wakey Help", action: #selector(showHelp), keyEquivalent: "")
+    let quitRow = NSMenuItem(title: "Quit Wakey", action: #selector(quitFromMenu), keyEquivalent: "q")
     var activity: NSObjectProtocol?   // App Nap opt-out token
     var awake = false
     var busy = false                  // a switch is in progress
@@ -122,12 +124,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggleRow.target = self
         loginRow.target = self
         lightsRow.target = self
+        helpRow.target = self
+        quitRow.target = self
         menu.addItem(stateRow)
         menu.addItem(toggleRow)
         menu.addItem(.separator())
         menu.addItem(lightsRow)
         menu.addItem(loginRow)
-        menu.addItem(NSMenuItem(title: "Quit Wakey", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+        menu.addItem(.separator())
+        menu.addItem(helpRow)
+        menu.addItem(quitRow)
         menu.delegate = self
 
         item.button?.target = self
@@ -276,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.button?.toolTip = "\(label)\nClick to switch"
         stateRow.title = awake ? "Awake: lid can close" : "Normal sleep"
         toggleRow.title = awake ? "Allow Sleep Again" : "Keep Awake with Lid Closed"
+        quitRow.title = quitTitle(awake: awake)
         lightsRow.state = lightsOffOnLid ? .on : .off
     }
 
@@ -346,6 +353,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuDidClose(_ m: NSMenu) { item.menu = nil }
+
+    @objc func showHelp() {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }   // as with the other alerts: no switching while it's open
+        NSApp.activate(ignoringOtherApps: true)
+        makeHelpAlert().runModal()
+        ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
+    }
+
+    /// The menu's Quit. While awake mode is on it switches back to normal sleep first: quitting would
+    /// otherwise leave the Mac unable to sleep, with no icon left to switch it back. A restart, a logout
+    /// and `quit app "Wakey"` (the install steps) don't come through here, so they keep the setting.
+    @objc func quitFromMenu() {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        if sleepDisabled() {
+            let result = setSleepDisabled(false)
+            if quitNeedsWarning(result) {
+                NSApp.activate(ignoringOtherApps: true)
+                let a = NSAlert()
+                a.messageText = "Wakey couldn't switch sleep back on"
+                a.informativeText = "If you quit now, the Mac stays awake with the lid closed, and there's no icon to switch it back."
+                a.addButton(withTitle: "Don't Quit")
+                a.addButton(withTitle: "Quit Anyway")
+                let stay = a.runModal() == .alertFirstButtonReturn
+                ignoreClicksUntil = ProcessInfo.processInfo.systemUptime
+                if stay { refresh(); return }
+            }
+        }
+        NSApp.terminate(nil)
+    }
 
     @objc func toggle() {
         guard !busy else { return }
