@@ -54,8 +54,8 @@ open -g /Applications/Wakey.app              # -g: start it in the background
 
 ## Version
 
-Version 1.1. The number is set once, at the top of `build.sh` (`VERSION`); the build number is worked out
-from it. Each release bumps the second number and gets a git tag (`v1.1`). Wakey Help shows it.
+Version 1.2. The number is set once, at the top of `build.sh` (`VERSION`); the build number is worked out
+from it. Each release bumps the second number and gets a git tag (`v1.2`). Wakey Help shows it.
 
 ## Self-check
 

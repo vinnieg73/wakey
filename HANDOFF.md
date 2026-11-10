@@ -2,8 +2,9 @@
 
 ## Status
 Working and in daily use. Everything is on `main`: three audits fixed and merged (PRs #1, #2, #3), the self-check
-(PR #4), the 2026-11-09 sweep (docs, version number and cleanup) and Version 1.1 (see "Version 1.1").
-Version 1.1 is the first numbered release, tagged `v1.1` and installed in `/Applications/Wakey.app` on 2026-11-09.
+(PR #4), the 2026-11-09 sweep (docs, version number and cleanup), Version 1.1 and Version 1.2 (see those sections).
+Current: Version 1.2, tagged `v1.2` and installed in `/Applications/Wakey.app` on 2026-11-09. (Version 1.1, the
+first numbered release, was tagged `v1.1` and installed earlier the same evening.)
 Owner thread: "Work on Wakey with Fable" in the Utilities project.
 
 ### How it got here
@@ -50,12 +51,20 @@ Two changes Vinnie approved from the sweep list, plus the sweep itself.
 - A separator now sits above Help and Quit.
 - Rules in `Logic.swift` (`quitTitle`, `quitNeedsWarning`), 7 new checks: `tests/run.sh` says "45 passed, 0 failed".
 - How it was tested: `./selfcheck.sh` PASS on the Mac. The Help alert was rendered to a picture off screen and
-  looked at (no window opened). Not hand-tested yet: see "Next steps".
+  looked at (no window opened). Vinnie then sent a screenshot of the real Help window (dark mode): it renders as
+  intended. The new Quit is not hand-tested yet: see "Next steps".
+
+## Version 1.2 (2026-11-09)
+One cosmetic fix from Vinnie's Help screenshot, which he asked to ship.
+- In Wakey Help, the two lines that start with a face wrapped back under the face. They now wrap under their own
+  text (a hanging indent: `headIndent` on those two paragraphs only, in `helpText()` in `Help.swift`).
+- No change to behavior, wording or the other lines. Tests unchanged (45).
 
 ## Version
 Two numbers, set once at the top of `build.sh` (`VERSION`). The build number (CFBundleVersion) is worked out
-from it: major x 100 + minor, so 1.1 = 101. Each release bumps the second number and gets a git tag
-(`v1.1`), pushed. Say "Version 1.1", never "1.1 (101)". Before 2026-11-09 every build said 1.0 with no build number.
+from it: major x 100 + minor, so 1.2 = 102. Each release bumps the second number and gets a git tag
+(`v1.2`), pushed. Say "Version 1.2", never "1.2 (102)". Before 2026-11-09 every build said 1.0 with no build number.
+The next release is 1.3.
 
 ## Done
 - Menu bar face toggles `pmset -a disablesleep 0|1` (orange/smiling = awake, blue/sleepy = normal sleep).
@@ -229,9 +238,9 @@ No sudoers change is needed: the existing `sleeptoggle-vinnie` rule keeps workin
 
 ## Next steps
 - Run `./selfcheck.sh` before every commit (it passed on the Mac 2026-11-09).
-- Version 1.1 hand tests (Vinnie): right-click > Wakey Help opens, says "Version 1.1" and reads well (send a
-  screenshot). While orange, the last row reads "Quit and Allow Sleep Again"; choose it, then
-  `pmset -g | grep SleepDisabled` says 0 and reopening Wakey shows the blue face.
+- Hand test still open (Vinnie): while orange, the last menu row reads "Quit and Allow Sleep Again"; choose it,
+  then `pmset -g | grep SleepDisabled` says 0 and reopening Wakey shows the blue face. (Wakey Help itself is
+  checked: his screenshot of Version 1.1, 2026-11-09. A screenshot of 1.2's face lines would confirm the indent.)
 - Hand tests in step 4 of the Mac test plan (audit 2026-10-23), by Vinnie; everything else in that plan is done.
 - Still to hand-test (needs the lid physically shut): with awake mode on, close the lid, then untick and re-tick
   Lights Off When Lid Closes from the menu (via an external display or VoiceOver). Unticking should stop holding the

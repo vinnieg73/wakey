@@ -9,9 +9,9 @@ while [ -L "$SRC" ]; do
 done
 cd "$(dirname "$SRC")"
 APP="build.noindex/Wakey.app"
-# The version: two numbers. Bump it for each release and tag the commit v<version> (1.1 -> tag v1.1).
-# The build number is worked out from it: major x 100 + minor, so 1.1 = 101 and 2.0 = 200.
-VERSION="1.1"
+# The version: two numbers. Bump it for each release and tag the commit v<version> (1.2 -> tag v1.2).
+# The build number is worked out from it: major x 100 + minor, so 1.2 = 102 and 2.0 = 200.
+VERSION="1.2"
 BUILD=$(( 10#${VERSION%%.*} * 100 + 10#${VERSION#*.} ))
 # Compile first, so a failed compile doesn't wipe the existing app.
 TMPBIN="$(mktemp -t wakey-build)"

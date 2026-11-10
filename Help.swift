@@ -11,7 +11,17 @@ func helpText() -> NSAttributedString {
     let body = NSFont.systemFont(ofSize: 13)
     let bold = NSFont.systemFont(ofSize: 13, weight: .semibold)
     let out = NSMutableAttributedString()
+    // A line that starts with a face wraps under its text, not back under the face.
+    let faceIndent = 18 + ("  " as NSString).size(withAttributes: [.font: body]).width
+    func style(indent: CGFloat) -> NSParagraphStyle {
+        let para = NSMutableParagraphStyle()
+        para.paragraphSpacing = 9
+        para.lineSpacing = 1.5
+        para.headIndent = indent
+        return para
+    }
     func add(_ title: String, _ text: String, face: NSImage? = nil, last: Bool = false) {
+        let start = out.length
         if let face {
             let a = NSTextAttachment()
             a.image = face
@@ -21,6 +31,8 @@ func helpText() -> NSAttributedString {
         }
         out.append(NSAttributedString(string: title + " ", attributes: [.font: bold]))
         out.append(NSAttributedString(string: text + (last ? "" : "\n"), attributes: [.font: body]))
+        out.addAttribute(.paragraphStyle, value: style(indent: face == nil ? 0 : faceIndent),
+                         range: NSRange(location: start, length: out.length - start))
     }
     add("Orange and smiling:", "staying awake. The Mac keeps running with the lid closed.", face: awakeIcon)
     add("Blue and sleepy:", "normal sleep. The Mac sleeps like any other Mac.", face: sleepIcon)
@@ -29,11 +41,7 @@ func helpText() -> NSAttributedString {
     add("Open at Login:", "starts Wakey when you log in.")
     add("Quit:", "quitting from the menu switches back to normal sleep first, so the Mac is never left unable to sleep. A restart keeps the setting you had.")
     add("Password:", "the first switch asks for your password once. After that it never asks again.", last: true)
-    let para = NSMutableParagraphStyle()
-    para.paragraphSpacing = 9
-    para.lineSpacing = 1.5
-    out.addAttributes([.paragraphStyle: para, .foregroundColor: NSColor.labelColor],
-                      range: NSRange(location: 0, length: out.length))
+    out.addAttribute(.foregroundColor, value: NSColor.labelColor, range: NSRange(location: 0, length: out.length))
     return out
 }
 
